@@ -20,28 +20,21 @@ class VinmecBookingAgent:
     """
     
     def __init__(self, api_base_url: str = "http://localhost:8000/api", 
-                 doctors_data_path: Optional[str] = None,
-                 backend_env_path: Optional[str] = None):
+                 doctors_data_path: Optional[str] = None):
         self.api_base_url = api_base_url
         self.session = requests.Session()
         self.booking_context = {}
         
-        # Load environment variables from backend/.env
-        if backend_env_path is None:
-            backend_env_path = Path(__file__).parent.parent / "backend" / ".env"
-        
-        if backend_env_path.exists():
-            load_dotenv(backend_env_path)
-        else:
-            print(f"⚠️  Warning: .env not found at {backend_env_path}")
-        
-        # Initialize OpenAI client
+        # Load environment variables
+        load_dotenv()
         api_key = os.getenv("OPENAI_API_KEY")
+        
         if not api_key:
             print("⚠️  Warning: OPENAI_API_KEY not found in environment")
             self.openai_client = None
         else:
             self.openai_client = OpenAI(api_key=api_key)
+            print("✓ OpenAI API key loaded")
         
         # Load system prompt from prompt2.txt
         prompt2_path = Path(__file__).parent / "prompt2.txt"
