@@ -1,16 +1,18 @@
 const API_BASE = "http://localhost:8000/api";
 
-// ── State ────────────────────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────────
 
 const state = {
   messages: [],
+  history: [],          // lịch sử gửi lên OpenAI [{role, content}]
+  currentStep: null,    // bước hiện tại trong flow
   suggestedDoctors: [],
   selectedDoctorIndex: 0,
   selectedSlot: null,
   appointments: [],
   chatSessions: [],
   activeSessionId: null,
-  latestSymptom: "Chua co mo ta trieu chung.",
+  latestSymptom: "Chưa có mô tả triệu chứng.",
 };
 
 const el = {
@@ -37,13 +39,13 @@ async function apiPost(path, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+  if (!res.ok) throw new Error(`POST ${path} thất bại: ${res.status}`);
   return res.json();
 }
 
 async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  if (!res.ok) throw new Error(`GET ${path} thất bại: ${res.status}`);
   return res.json();
 }
 
@@ -53,7 +55,7 @@ async function apiPatch(path, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
+  if (!res.ok) throw new Error(`PATCH ${path} thất bại: ${res.status}`);
   return res.json();
 }
 
@@ -61,15 +63,6 @@ async function apiPatch(path, body) {
 
 function currentDoctor() {
   return state.suggestedDoctors[state.selectedDoctorIndex];
-}
-
-function currentSuggestionText(specialty) {
-  const doc = currentDoctor();
-  return [
-    `Du tren trieu chung, ban nen kham khoa ${specialty}.`,
-    `Bac si de xuat: ${doc.name} (${doc.rating}/5).`,
-    `Khung gio phu hop: ${state.selectedSlot} hom nay tai ${doc.clinic}.`,
-  ].join("\n");
 }
 
 function cloneMessages(messages) {
@@ -80,62 +73,76 @@ function cloneMessages(messages) {
 
 async function syncActiveSession(overrides = {}) {
   if (!state.activeSessionId) return;
-
   const local = state.chatSessions.find((s) => s.id === state.activeSessionId);
   if (local) {
     local.messages = cloneMessages(state.messages);
     if (overrides.symptom) local.symptom = overrides.symptom;
     if (overrides.summary) local.summary = overrides.summary;
-    if (overrides.time) local.time = overrides.time;
+    if (overrides.time)    local.time    = overrides.time;
   }
-
   try {
     await apiPatch(`/sessions/${state.activeSessionId}`, {
       messages: state.messages,
       ...overrides,
     });
-  } catch {
-    // non-critical, UI already updated locally
-  }
-
+  } catch { /* non-critical */ }
   renderConsultHistory();
 }
 
 async function startNewSession(symptomText) {
-  const session = await apiPost("/sessions", { symptom: symptomText });
-  state.chatSessions.push(session);
-  state.activeSessionId = session.id;
+  try {
+    const session = await apiPost("/sessions", { symptom: symptomText });
+    state.chatSessions.push(session);
+    state.activeSessionId = session.id;
+  } catch {
+    const session = {
+      id: `local-${Date.now()}`,
+      symptom: symptomText,
+      summary: "Đang tư vấn.",
+      time: "Vừa xong",
+      messages: [],
+    };
+    state.chatSessions.push(session);
+    state.activeSessionId = session.id;
+  }
   renderConsultHistory();
 }
 
 async function loadSessions() {
   try {
-    const sessions = await apiGet("/sessions?userId=guest");
-    state.chatSessions = sessions;
+    state.chatSessions = await apiGet("/sessions?userId=guest");
     renderConsultHistory();
-  } catch {
-    // backend not yet available — skip
-  }
+  } catch { /* skip */ }
 }
 
 async function loadAppointments() {
   try {
-    const appts = await apiGet("/appointments?userId=guest");
-    state.appointments = appts;
+    state.appointments = await apiGet("/appointments?userId=guest");
     renderAppointments();
-  } catch {
-    // backend not yet available — skip
-  }
+  } catch { /* skip */ }
+}
+
+async function loadDefaultDoctors() {
+  try {
+    const doctors = await apiGet("/doctors");
+    if (state.suggestedDoctors.length === 0 && doctors.length > 0) {
+      state.suggestedDoctors = doctors.slice(0, 3);
+      state.selectedDoctorIndex = 0;
+      state.selectedSlot = state.suggestedDoctors[0]?.slots[0] ?? null;
+      renderDoctorList();
+      renderDoctorDetail();
+    }
+  } catch { /* skip */ }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
-function pushMessage(sender, text, withActions = false) {
+function pushMessage(sender, text, step = null) {
   state.messages.push({
     id: `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     sender,
     text,
-    withActions,
+    step,
   });
   syncActiveSession();
   renderMessages();
@@ -151,23 +158,33 @@ function renderMessages() {
     const lines = msg.text.split("\n");
     bubble.innerHTML = lines.map((line) => `<p>${line}</p>`).join("");
 
-    if (msg.withActions) {
+    // Render action buttons theo step
+    if (msg.sender === "bot" && msg.step) {
       const actions = document.createElement("div");
       actions.className = "chat-actions";
 
-      const confirmBtn = document.createElement("button");
-      confirmBtn.className = "confirm-btn";
-      confirmBtn.type = "button";
-      confirmBtn.textContent = "Xac nhan lich";
-      confirmBtn.addEventListener("click", confirmAppointment);
+      if (msg.step === "analyze") {
+        // Bước 1: xác nhận chuyên khoa hay không
+        actions.appendChild(_makeBtn("Xác nhận khoa này", "confirm-btn", () => sendQuickReply("Tôi đồng ý với chuyên khoa này")));
+        actions.appendChild(_makeBtn("Tư vấn nhân viên", "other-btn", () => sendQuickReply("Tôi muốn tư vấn với nhân viên")));
 
-      const otherBtn = document.createElement("button");
-      otherBtn.className = "other-btn";
-      otherBtn.type = "button";
-      otherBtn.textContent = "Chon lich khac";
-      otherBtn.addEventListener("click", chooseAnotherSuggestion);
+      } else if (msg.step === "ask_time") {
+        // Bước 2: chọn buổi → lọc slot trực tiếp, không qua OpenAI
+        actions.appendChild(_makeBtn("Buổi sáng", "confirm-btn", () => pickSlotBySession("morning")));
+        actions.appendChild(_makeBtn("Buổi chiều", "other-btn",  () => pickSlotBySession("afternoon")));
 
-      actions.append(confirmBtn, otherBtn);
+      } else if (msg.step === "suggest_slot") {
+        // Bước 3: xác nhận lịch hẹn cụ thể
+        actions.appendChild(_makeBtn("Xác nhận lịch", "confirm-btn", confirmAppointment));
+        actions.appendChild(_makeBtn("Chọn giờ khác", "other-btn", pickNextSlot));
+
+      } else if (msg.step === "consult_staff") {
+        // Kết nối nhân viên
+        actions.appendChild(_makeBtn("Gọi nhân viên tư vấn", "confirm-btn", () => {
+          pushMessage("bot", "Đang kết nối bạn với nhân viên tư vấn. Vui lòng chờ trong giây lát...");
+        }));
+      }
+
       bubble.appendChild(actions);
     }
 
@@ -177,50 +194,61 @@ function renderMessages() {
   el.chatFeed.scrollTop = el.chatFeed.scrollHeight;
 }
 
+function _makeBtn(label, className, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = className;
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
 function renderAppointments() {
   el.appointmentList.innerHTML = "";
-  el.appointmentCount.textContent = `${state.appointments.length} lich`;
+  el.appointmentCount.textContent = `${state.appointments.length} lịch`;
 
   if (state.appointments.length === 0) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "Ban chua xac nhan lich nao.";
+    empty.textContent = "Bạn chưa xác nhận lịch nào.";
     el.appointmentList.appendChild(empty);
     return;
   }
 
-  state.appointments
-    .slice()
-    .reverse()
-    .forEach((item) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<strong>${item.date} - ${item.slot}</strong><span>${item.doctor} | ${item.specialty}</span>`;
-      el.appointmentList.appendChild(li);
-    });
+  state.appointments.slice().reverse().forEach((item) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${item.date} - ${item.slot}</strong><span>${item.doctor} | ${item.specialty}</span>`;
+    el.appointmentList.appendChild(li);
+  });
 }
 
 function renderConsultHistory() {
   el.consultHistory.innerHTML = "";
+  state.chatSessions.slice().reverse().forEach((item) => {
+    const li = document.createElement("li");
+    li.className = `consult-session ${item.id === state.activeSessionId ? "active" : ""}`;
+    li.innerHTML = `<strong>${item.symptom}</strong><span>${item.summary} (${item.time})</span>`;
+    li.addEventListener("click", () => {
+      state.activeSessionId = item.id;
+      state.messages = cloneMessages(item.messages || []);
+      state.history = [];
+      state.latestSymptom = item.symptom;
 
-  state.chatSessions
-    .slice()
-    .reverse()
-    .forEach((item) => {
-      const li = document.createElement("li");
-      li.className = `consult-session ${item.id === state.activeSessionId ? "active" : ""}`;
-      li.innerHTML = `<strong>${item.symptom}</strong><span>${item.summary} (${item.time})</span>`;
+      // Restore doctors của session này nếu có
+      if (item.doctors?.length) {
+        state.suggestedDoctors = item.doctors;
+        state.selectedDoctorIndex = 0;
+        state.selectedSlot = item.doctors[0]?.slots[0] ?? null;
+        renderDoctorList();
+        renderDoctorDetail();
+      }
 
-      li.addEventListener("click", () => {
-        state.activeSessionId = item.id;
-        state.messages = cloneMessages(item.messages || []);
-        state.latestSymptom = item.symptom;
-        renderLatestSymptom();
-        renderMessages();
-        renderConsultHistory();
-      });
-
-      el.consultHistory.appendChild(li);
+      renderLatestSymptom();
+      renderMessages();
+      renderConsultHistory();
     });
+    el.consultHistory.appendChild(li);
+  });
 }
 
 function renderLatestSymptom() {
@@ -237,16 +265,12 @@ function renderDoctorList() {
     chip.type = "button";
     chip.className = `doctor-chip ${index === state.selectedDoctorIndex ? "active" : ""}`;
     chip.textContent = doc.name;
-
     chip.addEventListener("click", () => {
       state.selectedDoctorIndex = index;
-      if (!doc.slots.includes(state.selectedSlot)) {
-        state.selectedSlot = doc.slots[0];
-      }
+      if (!doc.slots.includes(state.selectedSlot)) state.selectedSlot = doc.slots[0];
       renderDoctorList();
       renderDoctorDetail();
     });
-
     const li = document.createElement("li");
     li.appendChild(chip);
     el.doctorList.appendChild(li);
@@ -259,88 +283,100 @@ function renderDoctorDetail() {
 
   el.doctorDetail.innerHTML = `
     <div class="doctor-hero">
-      <img src="${doc.image}" alt="Hinh bac si ${doc.name}" />
+      <img src="${doc.image}" alt="Ảnh bác sĩ ${doc.name}" />
       <div>
         <h3>${doc.name}</h3>
         <p>${doc.specialty}</p>
-        <p>${doc.degree}</p>
+        <p>${doc.title || ""}</p>
       </div>
     </div>
-
     <div class="info-grid">
-      <div>
-        <p>Phong kham</p>
-        <strong>${doc.clinic}</strong>
-      </div>
-      <div>
-        <p>Danh gia</p>
-        <strong>${doc.rating}/5</strong>
-      </div>
+      <div><p>Phòng khám</p><strong>${doc.clinic}</strong></div>
     </div>
-
     <div class="slot-wrap">
-      <p>Khung gio trong</p>
+      <p>Khung giờ trống</p>
       <div id="slot-row" class="slot-row"></div>
     </div>
-
-    <button id="doctors-action" type="button">Chon bac si nay</button>
+    <button id="doctors-action" type="button">Chọn bác sĩ này</button>
   `;
 
   const slotRow = document.getElementById("slot-row");
   doc.slots.forEach((slot) => {
-    const slotBtn = document.createElement("button");
-    slotBtn.type = "button";
-    slotBtn.className = `slot-btn ${slot === state.selectedSlot ? "active" : ""}`;
-    slotBtn.textContent = slot;
-
-    slotBtn.addEventListener("click", () => {
-      state.selectedSlot = slot;
-      renderDoctorDetail();
-    });
-
-    slotRow.appendChild(slotBtn);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `slot-btn ${slot === state.selectedSlot ? "active" : ""}`;
+    btn.textContent = slot;
+    btn.addEventListener("click", () => { state.selectedSlot = slot; renderDoctorDetail(); });
+    slotRow.appendChild(btn);
   });
 
   document.getElementById("doctors-action").addEventListener("click", () => {
+    // Không qua OpenAI — dùng slot thực tế đang chọn trong panel
+    pushMessage("user", `Tôi chọn bác sĩ ${doc.name}, giờ ${state.selectedSlot}`);
+    state.currentStep = "suggest_slot";
     pushMessage(
       "bot",
-      `Da cap nhat de xuat theo lua chon cua ban.\nBac si: ${doc.name}\nGio kham: ${state.selectedSlot}`,
-      true
+      `Bạn đã chọn bác sĩ **${doc.name}** (${doc.specialty})\nKhung giờ: **${state.selectedSlot}**\nPhòng khám: ${doc.clinic}\n\nBạn có muốn xác nhận lịch hẹn này không?`,
+      "suggest_slot"
     );
   });
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
-function chooseAnotherSuggestion() {
-  const total = state.suggestedDoctors.length;
-  state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
+// Lọc slot theo buổi sáng/chiều, chuyển thẳng sang suggest_slot
+function pickSlotBySession(session) {
   const doc = currentDoctor();
-  const idx = doc.slots.indexOf(state.selectedSlot);
-  state.selectedSlot = doc.slots[(idx + 1) % doc.slots.length];
+  if (!doc) return;
 
-  renderDoctorList();
+  const slots = session === "morning"
+    ? doc.slots.filter((s) => parseInt(s) < 12)
+    : doc.slots.filter((s) => parseInt(s) >= 12);
+
+  const label = session === "morning" ? "buổi sáng" : "buổi chiều";
+
+  if (slots.length === 0) {
+    pushMessage("bot", `Bác sĩ ${doc.name} không có khung giờ ${label}. Vui lòng chọn buổi khác.`, "ask_time");
+    return;
+  }
+
+  state.selectedSlot = slots[0];
   renderDoctorDetail();
-
+  state.currentStep = "suggest_slot";
   pushMessage(
     "bot",
-    `Da tim lich khac cho ban.\nBac si: ${doc.name}\nKhung gio moi: ${state.selectedSlot}`,
-    true
+    `Khung giờ ${label} còn trống: ${slots.join(", ")}.\nMình gợi ý bạn khám lúc **${slots[0]}** với bác sĩ ${doc.name}.\nBạn có muốn xác nhận không?`,
+    "suggest_slot"
   );
+}
 
-  syncActiveSession({
-    summary: `Da doi sang ${doc.name} luc ${state.selectedSlot}.`,
-    time: "Vua xong",
-  });
+// Xoay sang slot tiếp theo trong panel (không qua OpenAI)
+function pickNextSlot() {
+  const doc = currentDoctor();
+  if (!doc) return;
+  const idx = doc.slots.indexOf(state.selectedSlot);
+  state.selectedSlot = doc.slots[(idx + 1) % doc.slots.length];
+  renderDoctorDetail();
+  pushMessage(
+    "bot",
+    `Đã chuyển sang khung giờ **${state.selectedSlot}** với ${doc.name}.\nBạn có muốn xác nhận lịch này không?`,
+    "suggest_slot"
+  );
+}
+
+// Gửi tin nhắn nhanh (từ button) mà không cần user gõ
+async function sendQuickReply(text) {
+  pushMessage("user", text);
+  await callChatAPI(text);
 }
 
 async function confirmAppointment() {
   const doc = currentDoctor();
+  if (!doc || !state.selectedSlot) return;
+
   const now = new Date();
   const dateLabel = now.toLocaleDateString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
+    day: "2-digit", month: "2-digit", year: "numeric",
   });
 
   try {
@@ -352,7 +388,6 @@ async function confirmAppointment() {
     });
     state.appointments.push(appt);
   } catch {
-    // fallback: store locally if API fails
     state.appointments.push({
       doctor: doc.name,
       specialty: doc.specialty,
@@ -363,43 +398,75 @@ async function confirmAppointment() {
 
   renderAppointments();
 
+  // Không qua OpenAI — push message thành công trực tiếp
+  state.currentStep = "confirmed";
   pushMessage(
     "bot",
-    `Da xac nhan lich thanh cong.\nHen gap ban ngay ${dateLabel} luc ${state.selectedSlot} voi ${doc.name}.`
+    `Đã xác nhận lịch thành công! 🎉\nBác sĩ: ${doc.name}\nChuyên khoa: ${doc.specialty}\nThời gian: ${dateLabel} lúc ${state.selectedSlot}\nPhòng khám: ${doc.clinic}`,
+    "confirmed"
   );
 
   syncActiveSession({
-    summary: `Da dat voi ${doc.name} luc ${state.selectedSlot}`,
-    time: "Vua xong",
+    summary: `Đã đặt với ${doc.name} lúc ${state.selectedSlot}`,
+    time: "Vừa xong",
   });
 }
 
-async function generateBotSuggestion(inputText) {
-  let botMessage = "";
-  let doctors = [];
+// ── Core chat call ────────────────────────────────────────────────────────────
 
+async function callChatAPI(userText) {
   try {
-    const result = await apiPost("/chat", { message: inputText });
-    botMessage = result.message;
-    doctors = result.doctor_suggestion;
+    const doc = currentDoctor();
+    const doctorContext = doc
+      ? `Bác sĩ: ${doc.name} | Chuyên khoa: ${doc.specialty} | Phòng khám: ${doc.clinic} | Khung giờ có sẵn: ${doc.slots.join(", ")}`
+      : "";
+
+    const result = await apiPost("/chat", {
+      message: userText,
+      history: state.history,
+      doctor_context: doctorContext,
+    });
+
+    // Cập nhật history cho lượt tiếp
+    state.history.push({ role: "user", content: userText });
+    state.history.push({ role: "assistant", content: result.message });
+
+    state.currentStep = result.step;
+
+    // Nếu bước analyze → cập nhật danh sách bác sĩ và lưu vào session
+    if (result.step === "analyze" && result.doctor_suggestion?.length) {
+      state.suggestedDoctors = result.doctor_suggestion;
+      state.selectedDoctorIndex = 0;
+      state.selectedSlot = result.doctor_suggestion[0]?.slots[0] ?? null;
+      renderDoctorList();
+      renderDoctorDetail();
+
+      // Lưu doctors vào session local để restore khi click lịch sử
+      const local = state.chatSessions.find((s) => s.id === state.activeSessionId);
+      if (local) local.doctors = result.doctor_suggestion;
+    }
+
+    pushMessage("bot", result.message, result.step);
+
+    syncActiveSession({
+      symptom: state.latestSymptom,
+      summary: _stepSummary(result.step),
+      time: "Vừa xong",
+    });
   } catch {
-    pushMessage("bot", "Khong the ket noi den server. Vui long thu lai sau.");
-    return;
+    pushMessage("bot", "Không thể kết nối đến server. Vui lòng thử lại sau.");
   }
+}
 
-  state.suggestedDoctors = doctors;
-  state.selectedDoctorIndex = 0;
-  state.selectedSlot = doctors[0]?.slots[0] ?? null;
-
-  renderDoctorList();
-  renderDoctorDetail();
-  pushMessage("bot", botMessage, true);
-
-  syncActiveSession({
-    symptom: inputText,
-    summary: "Da de xuat khoa va lich kham.",
-    time: "Vua xong",
-  });
+function _stepSummary(step) {
+  const map = {
+    analyze: "Đã phân tích triệu chứng.",
+    ask_time: "Đang hỏi thời gian khám.",
+    suggest_slot: "Đã đề xuất lịch hẹn.",
+    confirmed: "Đã đặt lịch thành công.",
+    consult_staff: "Chuyển sang nhân viên tư vấn.",
+  };
+  return map[step] || "Đang tư vấn.";
 }
 
 // ── Event handling ────────────────────────────────────────────────────────────
@@ -411,27 +478,42 @@ async function handleSubmit(event) {
 
   state.latestSymptom = inputText;
   renderLatestSymptom();
-  state.messages = [];
-  renderMessages();
 
-  await startNewSession(inputText);
+  // Chỉ tạo session mới khi chưa có session nào đang active
+  if (!state.activeSessionId) {
+    state.messages = [];
+    state.history = [];
+    state.currentStep = null;
+    renderMessages();
+    await startNewSession(inputText);
+  }
 
   pushMessage("user", inputText);
   el.chatInput.value = "";
-
-  setTimeout(() => generateBotSuggestion(inputText), 380);
+  await callChatAPI(inputText);
 }
 
 function bindEvents() {
   el.chatForm.addEventListener("submit", handleSubmit);
 
+  document.getElementById("new-chat-btn").addEventListener("click", () => {
+    state.messages = [];
+    state.history = [];
+    state.currentStep = null;
+    state.activeSessionId = null;
+    renderMessages();
+    renderConsultHistory();
+    pushMessage(
+      "bot",
+      "Xin chào! Bạn hãy mô tả triệu chứng để mình tìm chuyên khoa và bác sĩ phù hợp nhé."
+    );
+  });
+
   el.prevDoctor.addEventListener("click", () => {
     const total = state.suggestedDoctors.length;
     if (!total) return;
     state.selectedDoctorIndex = (state.selectedDoctorIndex - 1 + total) % total;
-    if (!currentDoctor().slots.includes(state.selectedSlot)) {
-      state.selectedSlot = currentDoctor().slots[0];
-    }
+    if (!currentDoctor().slots.includes(state.selectedSlot)) state.selectedSlot = currentDoctor().slots[0];
     renderDoctorList();
     renderDoctorDetail();
   });
@@ -440,9 +522,7 @@ function bindEvents() {
     const total = state.suggestedDoctors.length;
     if (!total) return;
     state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
-    if (!currentDoctor().slots.includes(state.selectedSlot)) {
-      state.selectedSlot = currentDoctor().slots[0];
-    }
+    if (!currentDoctor().slots.includes(state.selectedSlot)) state.selectedSlot = currentDoctor().slots[0];
     renderDoctorList();
     renderDoctorDetail();
   });
@@ -453,14 +533,14 @@ function bindEvents() {
 async function init() {
   pushMessage(
     "bot",
-    "Chao ban, minh la tro ly dat lich phong kham.\nBan co the mo ta trieu chung de minh de xuat khoa, bac si va lich kham phu hop."
+    "Xin chào! Mình là trợ lý đặt lịch khám của MediFlow.\nBạn hãy mô tả triệu chứng để mình tìm chuyên khoa và bác sĩ phù hợp nhé."
   );
 
   renderLatestSymptom();
   renderAppointments();
   bindEvents();
 
-  await Promise.all([loadSessions(), loadAppointments()]);
+  await Promise.all([loadSessions(), loadAppointments(), loadDefaultDoctors()]);
 }
 
 init();

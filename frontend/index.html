@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MediFlow Chat - Dat lich phong kham</title>
+    <title>MediFlow Chat - Đặt lịch phòng khám</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,38 +16,39 @@
     <div class="ambient-bg"></div>
 
     <main class="layout">
-      <section class="panel sidebar" aria-label="Lich hen va lich su tu van">
+      <section class="panel sidebar" aria-label="Lịch hẹn và lịch sử tư vấn">
         <header class="panel-header">
-          <p class="kicker">Lich cua ban</p>
-          <h2>Lich hen da dat</h2>
+          <p class="kicker">Lịch của bạn</p>
+          <h2>Lịch hẹn đã đặt</h2>
         </header>
 
         <div class="card latest-symptom">
-          <p class="card-title">Tom tat trieu chung gan nhat</p>
-          <p id="latest-symptom-text">Chua co mo ta trieu chung.</p>
+          <p class="card-title">Tóm tắt triệu chứng gần nhất</p>
+          <p id="latest-symptom-text">Chưa có mô tả triệu chứng.</p>
         </div>
 
         <div class="card">
           <div class="card-head-row">
-            <p class="card-title">Lich hen sap toi</p>
-            <span id="appointment-count" class="pill">0 lich</span>
+            <p class="card-title">Lịch hẹn sắp tới</p>
+            <span id="appointment-count" class="pill">0 lịch</span>
           </div>
           <ul id="appointment-list" class="timeline"></ul>
         </div>
 
         <div class="card">
-          <p class="card-title">Lich su tu van</p>
+          <p class="card-title">Lịch sử tư vấn</p>
           <ul id="consult-history" class="history-list"></ul>
         </div>
       </section>
 
-      <section class="panel chat-panel" aria-label="Chat dat lich">
+      <section class="panel chat-panel" aria-label="Chat đặt lịch">
         <header class="panel-header chat-header">
           <div>
             <p class="kicker">AI Assistant</p>
             <h1>MediFlow Chat</h1>
           </div>
-          <span class="status-dot">Dang hoat dong</span>
+          <span class="status-dot">Đang hoạt động</span>
+          <button id="new-chat-btn" type="button">+ Cuộc trò chuyện mới</button>
         </header>
 
         <div id="chat-feed" class="chat-feed" aria-live="polite"></div>
@@ -56,23 +57,23 @@
           <input
             id="chat-input"
             type="text"
-            placeholder="Nhap trieu chung hoac cau hoi... (Nhan Enter de gui)"
+            placeholder="Nhập triệu chứng hoặc câu hỏi... (Nhấn Enter để gửi)"
             autocomplete="off"
           />
-          <button type="submit">Gui</button>
+          <button type="submit">Gửi</button>
         </form>
       </section>
 
-      <section class="panel doctor-panel" aria-label="Bang bac si de xuat">
+      <section class="panel doctor-panel" aria-label="Bảng bác sĩ đề xuất">
         <header class="panel-header">
           <p class="kicker">Doctor Board</p>
-          <h2>Bac si de xuat</h2>
+          <h2>Bác sĩ đề xuất</h2>
         </header>
 
         <div class="doctor-carousel-controls">
-          <button id="prev-doctor" type="button" aria-label="Bac si truoc">◀</button>
+          <button id="prev-doctor" type="button" aria-label="Bác sĩ trước">◀</button>
           <p><span id="doctor-index">1</span>/<span id="doctor-total">1</span></p>
-          <button id="next-doctor" type="button" aria-label="Bac si tiep">▶</button>
+          <button id="next-doctor" type="button" aria-label="Bác sĩ tiếp">▶</button>
         </div>
 
         <ul id="doctor-list" class="doctor-list"></ul>

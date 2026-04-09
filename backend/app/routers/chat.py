@@ -36,6 +36,29 @@ Ví dụ output:
 {{"specialty": "Thần kinh", "message": "Triệu chứng đau đầu và chóng mặt kéo dài của bạn có thể liên quan đến hệ thần kinh. Bạn nên đến khám khoa Thần kinh để được chẩn đoán chính xác."}}"""
 
 
+def _infer_intent(message: str) -> str:
+    """
+    AI infer intent của user message: 'symptom' hoặc 'booking'
+    """
+    intent_prompt = """Phân loại ý định sang: "symptom" (mô tả triệu chứng) hoặc "booking" (đặt lịch hẹn)
+Trả về JSON: {"intent": "symptom"} hoặc {"intent": "booking"}"""
+    
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": intent_prompt},
+                {"role": "user", "content": message},
+            ],
+            temperature=0.3,
+        )
+        result = json.loads(completion.choices[0].message.content)
+        return result.get("intent", "symptom")
+    except:
+        return "symptom"
+
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -48,8 +71,19 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 def analyze_symptom(body: ChatRequest):
     """
-    Gửi tin nhắn triệu chứng → OpenAI phân tích → trả về message + danh sách bác sĩ.
+    Gửi tin nhắn trieụ chứng → AI infer intent → xử lý phù hợp.
     """
+    # Infer intent tự động
+    intent = _infer_intent(body.message)
+    
+    if intent == "booking":
+        # Người dùng muốn đặt lịch → nhắc nhở sử dụng endpoint booking
+        return ChatResponse(
+            message="Dạ, để đặt lịch hẹn bạn vui lòng sử dụng chức năng đặt lịch hoặc liên hệ trực tiếp với Vinmec",
+            doctor_suggestion=[]
+        )
+    
+    # intent == "symptom" → xử lý như bình thường
     try:
         completion = client.chat.completions.create(
             model="gpt-4o-mini",

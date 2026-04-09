@@ -239,7 +239,8 @@ def _extract_en_symptoms(normalized_vi: str) -> set[str]:
     """Map normalized Vietnamese text → matched English symptom tokens."""
     matched: set[str] = set()
     for vi_phrase, en_sym in VI_TO_EN.items():
-        if _normalize(vi_phrase) in normalized_vi:
+        pattern = r"\b" + re.escape(_normalize(vi_phrase)) + r"\b"
+        if re.search(pattern, normalized_vi):
             matched.add(en_sym.lower().replace(" ", "_"))
     return matched
 
@@ -254,45 +255,57 @@ def _score_diseases(en_symptoms: set[str]) -> dict[str, int]:
     return scores
 
 
-def detect_specialty(symptom_text: str) -> str:
-    """
-    Return the best-matching Vietnamese medical specialty for the given text.
+_FALLBACK_MAP: list[tuple[str, list[str]]] = [
+    ("Tim mạch",      ["tim", "dau nguc", "danh trong nguc", "hoi hop", "huyet ap"]),
+    ("Hô hấp",        ["ho", "dom", "viem hong", "kho tho", "sot", "hen suyen"]),
+    ("Thần kinh",     ["dau dau", "chong mat", "choang", "te", "mat ngu", "kho ngu", "met moi"]),
+    ("Da liễu",       ["ngua", "man ngua", "noi man", "phat ban", "mun", "vay nen"]),
+    ("Tiêu hóa",      ["dau bung", "buon non", "non", "tieu chay", "tao bon", "day bung"]),
+    ("Cơ xương khớp", ["dau khop", "dau lung", "sung khop", "cung khop", "dau co"]),
+    ("Nội tiết",      ["tieu nhieu", "tieu duong", "dai thao duong", "tuyen giap", "buou co"]),
+]
 
-    Steps:
-      1. Translate Vietnamese → English symptoms via VI_TO_EN map.
-      2. Score all CSV diseases by symptom overlap.
-      3. Map winning disease → specialty via DISEASE_SPECIALTY.
-      4. Fall back to direct keyword matching if CSV gives no result.
+
+def analyze(symptom_text: str) -> dict:
+    """
+    Phân tích triệu chứng, trả về dict:
+      - disease: tên bệnh khớp nhất trong CSV (hoặc None)
+      - specialty: chuyên khoa tiếng Việt
+      - matched_symptoms: danh sách triệu chứng tiếng Anh đã match được
+      - score: số triệu chứng khớp
     """
     normalized = _normalize(symptom_text)
 
-    # Step 1-2: CSV-based scoring
+    # Bước 1: dịch VI → EN
     en_symptoms = _extract_en_symptoms(normalized)
+
+    # Bước 2: score từng bệnh trong CSV
     if en_symptoms:
         scores = _score_diseases(en_symptoms)
         if scores:
             best_disease = max(scores, key=lambda d: scores[d])
             specialty = DISEASE_SPECIALTY.get(best_disease)
             if specialty:
-                return specialty
+                matched = list(en_symptoms & _disease_symptoms[best_disease])
+                return {
+                    "disease": best_disease,
+                    "specialty": specialty,
+                    "matched_symptoms": matched,
+                    "score": scores[best_disease],
+                }
 
-    # Step 3: Fallback — direct Vietnamese keyword matching
-    fallback_map: list[tuple[str, list[str]]] = [
-        ("Tim mạch",      ["tim", "dau nguc", "danh trong nguc", "hoi hop", "huyet ap"]),
-        ("Hô hấp",        ["ho", "dom", "viem hong", "kho tho", "sot", "hen suyen"]),
-        ("Thần kinh",     ["dau dau", "chong mat", "choang", "te", "mat ngu", "kho ngu", "met moi"]),
-        ("Da liễu",       ["ngua", "man ngua", "noi man", "phat ban", "mun", "vay nen"]),
-        ("Tiêu hóa",      ["dau bung", "buon non", "non", "tieu chay", "tao bon", "day bung"]),
-        ("Cơ xương khớp", ["dau khop", "dau lung", "sung khop", "cung khop", "dau co"]),
-        ("Nội tiết",      ["tieu nhieu", "tieu duong", "dai thao duong", "tuyen giap", "buou co"]),
-    ]
-
+    # Bước 3: fallback keyword matching
     best_specialty = "Nội tổng quát"
     best_score = 0
-    for specialty, keywords in fallback_map:
+    for specialty, keywords in _FALLBACK_MAP:
         score = sum(1 for kw in keywords if _normalize(kw) in normalized)
         if score > best_score:
             best_score = score
             best_specialty = specialty
 
-    return best_specialty
+    return {
+        "disease": None,
+        "specialty": best_specialty,
+        "matched_symptoms": [],
+        "score": best_score,
+    }
