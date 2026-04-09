@@ -66,6 +66,7 @@ const state = {
   selectedDoctorIndex: 0,
   selectedSlot: doctors[0].slots[0],
   appointments: [],
+  pendingAppointment: null,
   chatSessions: [
     {
       id: "session-mock-1",
@@ -96,6 +97,14 @@ const el = {
   chatFeed: document.getElementById("chat-feed"),
   chatForm: document.getElementById("chat-form"),
   chatInput: document.getElementById("chat-input"),
+  newChatBtn: document.getElementById("new-chat-btn"),
+  bookingModal: document.getElementById("booking-modal"),
+  bookingForm: document.getElementById("booking-form"),
+  bookingClose: document.getElementById("booking-close"),
+  patientName: document.getElementById("patient-name"),
+  patientGender: document.getElementById("patient-gender"),
+  patientDob: document.getElementById("patient-dob"),
+  patientPhone: document.getElementById("patient-phone"),
   doctorList: document.getElementById("doctor-list"),
   doctorDetail: document.getElementById("doctor-detail"),
   doctorIndex: document.getElementById("doctor-index"),
@@ -133,15 +142,17 @@ function getSuggestedDoctorsBySpecialty(specialty) {
 }
 
 function pushMessage(sender, text, withActions = false) {
-  state.messages.push({
+  const newMessage = {
     id: `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     sender,
     text,
     withActions,
-  });
+  };
+
+  state.messages.push(newMessage);
 
   syncActiveSession();
-  renderMessages();
+  appendMessageToFeed(newMessage);
 }
 
 function cloneMessages(messages) {
@@ -190,6 +201,86 @@ function startNewSession(symptomText) {
   renderConsultHistory();
 }
 
+function startManualNewChat() {
+  state.activeSessionId = null;
+  state.messages = [];
+  state.latestSymptom = "Chua co mo ta trieu chung.";
+  state.pendingAppointment = null;
+
+  renderMessages();
+  renderLatestSymptom();
+  renderConsultHistory();
+
+  pushMessage(
+    "bot",
+    `Da tao doan chat moi.
+Ban co the mo ta trieu chung de minh de xuat khoa, bac si va lich kham phu hop.`
+  );
+}
+
+function openBookingModal() {
+  if (!el.bookingModal || !el.bookingForm) {
+    return;
+  }
+
+  el.bookingForm.reset();
+  el.bookingModal.classList.add("open");
+  el.bookingModal.setAttribute("aria-hidden", "false");
+}
+
+function closeBookingModal() {
+  if (!el.bookingModal) {
+    return;
+  }
+
+  el.bookingModal.classList.remove("open");
+  el.bookingModal.setAttribute("aria-hidden", "true");
+  state.pendingAppointment = null;
+}
+
+function handleBookingSubmit(event) {
+  event.preventDefault();
+
+  if (!state.pendingAppointment) {
+    closeBookingModal();
+    return;
+  }
+
+  const patientName = (el.patientName?.value || "").trim();
+  const patientGender = (el.patientGender?.value || "").trim();
+  const patientDob = (el.patientDob?.value || "").trim();
+  const patientPhone = (el.patientPhone?.value || "").trim();
+
+  if (!patientName || !patientGender || !patientDob || !patientPhone) {
+    return;
+  }
+
+  const appointment = {
+    ...state.pendingAppointment,
+    patient: {
+      name: patientName,
+      gender: patientGender,
+      dob: patientDob,
+      phone: patientPhone,
+    },
+  };
+
+  state.appointments.push(appointment);
+  renderAppointments();
+
+  pushMessage(
+    "bot",
+    `Da xac nhan lich thanh cong.\nHen gap ${patientName} ngay ${appointment.timeLabel} luc ${appointment.slot} voi ${appointment.doctor}.`
+  );
+
+  syncActiveSession({
+    summary: `Da dat voi ${appointment.doctor} luc ${appointment.slot}`,
+    time: "Vua xong",
+  });
+
+  closeBookingModal();
+}
+
 function currentDoctor() {
   return state.suggestedDoctors[state.selectedDoctorIndex];
 }
@@ -203,43 +294,66 @@ function currentSuggestionText() {
   ].join("\n");
 }
 
-function renderMessages() {
-  el.chatFeed.innerHTML = "";
+function createMessageBubble(msg, shouldAnimate = true) {
+  const bubble = document.createElement("article");
+  bubble.className = `chat-bubble ${msg.sender}`;
 
-  state.messages.forEach((msg) => {
-    const bubble = document.createElement("article");
-    bubble.className = `chat-bubble ${msg.sender}`;
+  if (!shouldAnimate) {
+    bubble.classList.add("no-anim");
+  }
 
-    const lines = msg.text.split("\n");
-    bubble.innerHTML = lines.map((line) => `<p>${line}</p>`).join("");
+  const lines = msg.text.split("\n");
+  bubble.innerHTML = lines.map((line) => `<p>${line}</p>`).join("");
 
-    if (msg.withActions) {
-      const actions = document.createElement("div");
-      actions.className = "chat-actions";
+  if (msg.withActions) {
+    const actions = document.createElement("div");
+    actions.className = "chat-actions";
 
-      const confirmBtn = document.createElement("button");
-      confirmBtn.className = "confirm-btn";
-      confirmBtn.type = "button";
-      confirmBtn.textContent = "Xac nhan lich";
-      confirmBtn.addEventListener("click", confirmAppointment);
+    const confirmBtn = document.createElement("button");
+    confirmBtn.className = "confirm-btn";
+    confirmBtn.type = "button";
+    confirmBtn.textContent = "Xac nhan lich";
+    confirmBtn.addEventListener("click", confirmAppointment);
 
-      const otherBtn = document.createElement("button");
-      otherBtn.className = "other-btn";
-      otherBtn.type = "button";
-      otherBtn.textContent = "Chon lich khac";
-      otherBtn.addEventListener("click", chooseAnotherSuggestion);
+    const otherBtn = document.createElement("button");
+    otherBtn.className = "other-btn";
+    otherBtn.type = "button";
+    otherBtn.textContent = "Chon lich khac";
+    otherBtn.addEventListener("click", chooseAnotherSuggestion);
 
-      actions.append(confirmBtn, otherBtn);
-      bubble.appendChild(actions);
-    }
+    actions.append(confirmBtn, otherBtn);
+    bubble.appendChild(actions);
+  }
 
-    el.chatFeed.appendChild(bubble);
-  });
+  return bubble;
+}
 
+function appendMessageToFeed(msg, shouldAnimate = true) {
+  if (!el.chatFeed) {
+    return;
+  }
+
+  el.chatFeed.appendChild(createMessageBubble(msg, shouldAnimate));
   el.chatFeed.scrollTop = el.chatFeed.scrollHeight;
 }
 
+function renderMessages() {
+  if (!el.chatFeed) {
+    return;
+  }
+
+  el.chatFeed.innerHTML = "";
+
+  state.messages.forEach((msg) => {
+    appendMessageToFeed(msg, false);
+  });
+}
+
 function renderAppointments() {
+  if (!el.appointmentList || !el.appointmentCount) {
+    return;
+  }
+
   el.appointmentList.innerHTML = "";
   el.appointmentCount.textContent = `${state.appointments.length} lich`;
 
@@ -262,6 +376,10 @@ function renderAppointments() {
 }
 
 function renderConsultHistory() {
+  if (!el.consultHistory) {
+    return;
+  }
+
   el.consultHistory.innerHTML = "";
 
   state.chatSessions
@@ -288,10 +406,18 @@ function renderConsultHistory() {
 }
 
 function renderLatestSymptom() {
+  if (!el.latestSymptomText) {
+    return;
+  }
+
   el.latestSymptomText.textContent = state.latestSymptom;
 }
 
 function renderDoctorList() {
+  if (!el.doctorList || !el.doctorTotal || !el.doctorIndex) {
+    return;
+  }
+
   el.doctorList.innerHTML = "";
   el.doctorTotal.textContent = state.suggestedDoctors.length;
   el.doctorIndex.textContent = state.selectedDoctorIndex + 1;
@@ -320,7 +446,14 @@ function renderDoctorList() {
 }
 
 function renderDoctorDetail() {
+  if (!el.doctorDetail) {
+    return;
+  }
+
   const doc = currentDoctor();
+  if (!doc) {
+    return;
+  }
 
   el.doctorDetail.innerHTML = `
     <div class="doctor-hero">
@@ -349,9 +482,13 @@ function renderDoctorDetail() {
     </div>
 
     <button id="doctors-action" type="button">Chon bac si nay</button>
+
   `;
 
   const slotRow = document.getElementById("slot-row");
+  if (!slotRow) {
+    return;
+  }
 
   doc.slots.forEach((slot) => {
     const slotBtn = document.createElement("button");
@@ -368,6 +505,10 @@ function renderDoctorDetail() {
   });
 
   const useDoctorBtn = document.getElementById("doctors-action");
+  if (!useDoctorBtn) {
+    return;
+  }
+
   useDoctorBtn.addEventListener("click", () => {
     pushMessage(
       "bot",
@@ -412,29 +553,17 @@ function confirmAppointment() {
     year: "numeric",
   });
 
-  const appointment = {
+  state.pendingAppointment = {
     doctor: doc.name,
     specialty: doc.specialty,
     slot: state.selectedSlot,
     timeLabel: dateLabel,
   };
 
-  state.appointments.push(appointment);
-
-  renderAppointments();
-
-  pushMessage(
-    "bot",
-    `Da xac nhan lich thanh cong.\nHen gap ban ngay ${dateLabel} luc ${state.selectedSlot} voi ${doc.name}.`
-  );
-
-  syncActiveSession({
-    summary: `Da dat voi ${doc.name} luc ${state.selectedSlot}`,
-    time: "Vua xong",
-  });
+  openBookingModal();
 }
 
-function generateBotSuggestionFromInput(inputText) {
+function generateBotSuggestionFromInput(inputText, shouldUpdateSymptom = false) {
   const specialty = detectSpecialty(inputText);
   state.suggestedDoctors = getSuggestedDoctorsBySpecialty(specialty);
   state.selectedDoctorIndex = 0;
@@ -444,11 +573,17 @@ function generateBotSuggestionFromInput(inputText) {
   renderDoctorDetail();
 
   pushMessage("bot", currentSuggestionText(), true);
-  syncActiveSession({
-    symptom: inputText,
+
+  const updates = {
     summary: "Da de xuat khoa va lich kham.",
     time: "Vua xong",
-  });
+  };
+
+  if (shouldUpdateSymptom) {
+    updates.symptom = inputText;
+  }
+
+  syncActiveSession(updates);
 }
 
 function handleSubmit(event) {
@@ -459,45 +594,76 @@ function handleSubmit(event) {
     return;
   }
 
+  const shouldCreateSession = !state.activeSessionId;
+  if (shouldCreateSession) {
+    startNewSession(inputText);
+  }
+
   state.latestSymptom = inputText;
   renderLatestSymptom();
-  state.messages = [];
-  renderMessages();
-  startNewSession(inputText);
 
   pushMessage("user", inputText);
   el.chatInput.value = "";
 
   setTimeout(() => {
-    generateBotSuggestionFromInput(inputText);
+    generateBotSuggestionFromInput(inputText, shouldCreateSession);
   }, 380);
 }
 
 function bindEvents() {
-  el.chatForm.addEventListener("submit", handleSubmit);
+  if (el.chatForm) {
+    el.chatForm.addEventListener("submit", handleSubmit);
+  }
+  if (el.newChatBtn) {
+    el.newChatBtn.addEventListener("click", startManualNewChat);
+  }
 
-  el.prevDoctor.addEventListener("click", () => {
-    const total = state.suggestedDoctors.length;
-    state.selectedDoctorIndex = (state.selectedDoctorIndex - 1 + total) % total;
-    if (!currentDoctor().slots.includes(state.selectedSlot)) {
-      state.selectedSlot = currentDoctor().slots[0];
-    }
-    renderDoctorList();
-    renderDoctorDetail();
-  });
+  if (el.bookingForm) {
+    el.bookingForm.addEventListener("submit", handleBookingSubmit);
+  }
 
-  el.nextDoctor.addEventListener("click", () => {
-    const total = state.suggestedDoctors.length;
-    state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
-    if (!currentDoctor().slots.includes(state.selectedSlot)) {
-      state.selectedSlot = currentDoctor().slots[0];
-    }
-    renderDoctorList();
-    renderDoctorDetail();
-  });
+  if (el.bookingClose) {
+    el.bookingClose.addEventListener("click", closeBookingModal);
+  }
+
+  if (el.bookingModal) {
+    el.bookingModal.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && target.dataset.closeModal === "true") {
+        closeBookingModal();
+      }
+    });
+  }
+
+  if (el.prevDoctor) {
+    el.prevDoctor.addEventListener("click", () => {
+      const total = state.suggestedDoctors.length;
+      state.selectedDoctorIndex = (state.selectedDoctorIndex - 1 + total) % total;
+      if (!currentDoctor().slots.includes(state.selectedSlot)) {
+        state.selectedSlot = currentDoctor().slots[0];
+      }
+      renderDoctorList();
+      renderDoctorDetail();
+    });
+  }
+
+  if (el.nextDoctor) {
+    el.nextDoctor.addEventListener("click", () => {
+      const total = state.suggestedDoctors.length;
+      state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
+      if (!currentDoctor().slots.includes(state.selectedSlot)) {
+        state.selectedSlot = currentDoctor().slots[0];
+      }
+      renderDoctorList();
+      renderDoctorDetail();
+    });
+  }
 }
 
 function init() {
+  // Bind input events first so chat submit still works even if a render section fails.
+  bindEvents();
+
   pushMessage(
     "bot",
     "Chao ban, minh la tro ly dat lich phong kham.\nBan co the mo ta trieu chung de minh de xuat khoa, bac si va lich kham phu hop."
@@ -508,7 +674,6 @@ function init() {
   renderConsultHistory();
   renderDoctorList();
   renderDoctorDetail();
-  bindEvents();
 }
 
 init();

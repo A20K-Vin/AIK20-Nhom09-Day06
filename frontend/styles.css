@@ -41,7 +41,7 @@ body {
   height: calc(100vh - 36px);
   margin: 18px auto;
   display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
+  grid-template-columns: 3fr 1fr;
   gap: 16px;
 }
 
@@ -206,6 +206,35 @@ h2 {
   gap: 12px;
 }
 
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.new-chat-btn {
+  border: 1px solid #c8dcff;
+  background: #eaf2ff;
+  color: #1f5fbf;
+  border-radius: 999px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.new-chat-btn:hover {
+  background: #dceaff;
+  border-color: #b7d0ff;
+  color: #184f9f;
+}
+
+.new-chat-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(44, 110, 214, 0.24);
+}
+
 .status-dot {
   background: #e6fff2;
   color: #0f9d73;
@@ -231,6 +260,10 @@ h2 {
   padding: 10px 12px;
   border: 1px solid transparent;
   animation: fade-in 0.24s ease both;
+}
+
+.chat-bubble.no-anim {
+  animation: none;
 }
 
 .chat-bubble p {
@@ -478,6 +511,103 @@ h2 {
   font-size: 13px;
 }
 
+.booking-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+}
+
+.booking-modal.open {
+  display: flex;
+}
+
+.booking-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 35, 29, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.booking-modal-card {
+  position: relative;
+  width: min(460px, calc(100% - 24px));
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #d6e8e1;
+  box-shadow: 0 28px 56px rgba(9, 48, 37, 0.28);
+  padding: 18px;
+}
+
+.booking-modal-card h3 {
+  margin: 0 0 12px;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+.booking-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: #edf6f2;
+  color: #34564b;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.booking-form {
+  display: grid;
+  gap: 10px;
+}
+
+.booking-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.booking-form span {
+  font-size: 13px;
+  color: #2f5247;
+  font-weight: 600;
+}
+
+.booking-form input,
+.booking-form select {
+  width: 100%;
+  border: 1px solid #cfe2da;
+  border-radius: 11px;
+  padding: 10px 11px;
+  font: inherit;
+  outline: none;
+}
+
+.booking-form input:focus,
+.booking-form select:focus {
+  border-color: #79caae;
+  box-shadow: 0 0 0 3px rgba(15, 157, 115, 0.14);
+}
+
+.booking-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.booking-actions button {
+  border: none;
+  background: #0f9d73;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -533,5 +663,18 @@ h2 {
 
   .chat-panel {
     order: -1;
+  }
+
+  .chat-header {
+    align-items: flex-start;
+  }
+
+  .chat-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .new-chat-btn {
+    padding: 8px 10px;
   }
 }
