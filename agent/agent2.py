@@ -103,7 +103,90 @@ class VinmecBookingAgent:
         except Exception as e:
             print(f"⚠️  Error loading prompt2.txt: {e}")
             return "Bạn là trợ lý đặt lịch khám tại Vinmec."
+    
+    # ─────────────────── CONTEXT EXTRACTION & ROUTING ──────────────────────
+    
+    def extract_specialty(self, message: str) -> Optional[str]:
+        """
+        Trích xuất tên chuyên khoa từ message - dùng AI check để handle typo/sai chính tả.
         
+        Args:
+            message: Tin nhắn từ user
+            
+        Returns:
+            Specialty name hoặc None nếu không tìm thấy
+        """
+        if not self.openai_client:
+            return None
+        
+        # AI infer specialty từ message
+        specialty_list = json.dumps(list(self.valid_specialties), ensure_ascii=False)
+        extract_prompt = f"""Kiểm tra xem user có nhắc tới một trong các chuyên khoa sau không:
+{specialty_list}
+
+QUAN TRỌNG: Nếu user nhắc đến chuyên khoa có thể sai chính tả (VD: "Thần nin" thay vì "Thần kinh"), hãy sửa lại tên chính xác.
+
+Trả về JSON:
+- "found": true/false
+- "specialty": tên chuyên khoa chính xác (nếu found=true), hoặc null"""
+        
+        try:
+            completion = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": extract_prompt},
+                    {"role": "user", "content": message},
+                ],
+                temperature=0.3,
+            )
+            result = json.loads(completion.choices[0].message.content)
+            
+            if result.get("found"):
+                specialty = result.get("specialty")
+                print(f"✓ AI extracted specialty: {specialty}")
+                return specialty
+            else:
+                print(f"ℹ️  No specialty found in message")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️  Error extracting specialty: {e}")
+            return None
+    
+    def route_to_agent1(self, user_message: str) -> Optional[str]:
+        """
+        Route message tới Agent1 để phân tích triệu chứng và lấy specialty.
+        Gọi backend API /api/chat để infer và phân tích.
+        
+        Args:
+            user_message: Tin nhắn từ user
+            
+        Returns:
+            Specialty được infer, hoặc None nếu không thành công
+        """
+        try:
+            response = self.session.post(
+                f"{self.api_base_url.replace('/api', '')}/api/chat",
+                json={"message": user_message},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                specialty = result.get("specialty")
+                # Lưu response từ Agent1 vào context
+                self.booking_context["agent1_response"] = result.get("message")
+                print(f"✓ Agent1 inferred specialty: {specialty}")
+                return specialty
+            else:
+                print(f"⚠️  Agent1 API error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"⚠️  Error calling Agent1: {e}")
+            return None
+    
     # ─────────────────────────── MAIN FLOW ──────────────────────────────────
     
     def generate_response(self, user_message: str, context: Optional[Dict] = None) -> str:
@@ -149,7 +232,57 @@ class VinmecBookingAgent:
             print(f"⚠️  OpenAI API error: {e}")
             return "Xin lỗi, có lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại."
     
-    def start_booking(self, specialty: str, user_id: str = "guest") -> str:
+    def handle_booking_request(self, user_message: str) -> str:
+        """
+        Smart booking handler - kiểm tra context và route phù hợp.
+        
+        Flow:
+        1. Extract specialty từ message (nếu user nói rõ)
+        2. Nếu có specialty → xử lý booking
+        3. Nếu không → route lại Agent1 để phân tích triệu chứng
+        
+        Args:
+            user_message: Tin nhắn từ user
+            
+        Returns:
+            Response để gửi lại user
+        """
+        # Bước 1: Cố gắng trích xuất specialty từ message
+        extracted_specialty = self.extract_specialty(user_message)
+        
+        if extracted_specialty:
+            # User nói rõ chuyên khoa → xử lý booking ngay
+            print(f"✓ Specialty found in message: {extracted_specialty}")
+            self.booking_context["specialty"] = extracted_specialty
+            
+            # Generate booking response
+            context = {"specialty": extracted_specialty}
+            response = self.generate_response(
+                f"Bạn muốn đặt lịch khám chuyên khoa {extracted_specialty}. Giúp tôi chọn bác sĩ và khung giờ.",
+                context
+            )
+            return response
+        
+        # Bước 2: Không có specialty → hỏi Agent1 phân tích triệu chứng
+        print("ℹ️  No specialty in message, routing to Agent1...")
+        inferred_specialty = self.route_to_agent1(user_message)
+        
+        if inferred_specialty:
+            # Agent1 phân tích thành công
+            self.booking_context["specialty"] = inferred_specialty
+            
+            # Generate response dựa vào Agent1
+            agent1_msg = self.booking_context.get("agent1_response", "")
+            context = {"specialty": inferred_specialty}
+            response = self.generate_response(
+                f"Agent1 đã phân tích: {agent1_msg}. Giúp tôi đặt lịch khám chuyên khoa {inferred_specialty}.",
+                context
+            )
+            return response
+        else:
+            # Agent1 fail → hỏi lại user
+            msg = "Dạ, để giúp bạn đặt lịch khám phù hợp, bạn vui lòng mô tả triệu chứng hoặc vấn đề sức khỏe bạn đang gặp phải nhé?"
+            return self.generate_response(msg)
         """
         Bắt đầu quy trình đặt lịch. Xác nhận chuyên khoa từ Agent 1.
         
