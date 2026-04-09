@@ -420,6 +420,7 @@ h2 {
   border-radius: 11px;
   background: #f4fbf8;
   padding: 8px;
+  min-width: 0;
 }
 
 .info-grid p {
@@ -433,6 +434,11 @@ h2 {
   margin-top: 2px;
   font-size: 13px;
   color: #1f4d42;
+  overflow-wrap: anywhere;
+}
+
+.info-grid-full {
+  grid-column: 1 / -1;
 }
 
 .slot-wrap {

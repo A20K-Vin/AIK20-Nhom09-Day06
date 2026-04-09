@@ -132,10 +132,11 @@ function renderDoctorDetail() {
   }
 
   const name = doc.name || doc.doctor_name || "Bác sĩ";
-  const image = doc.image || doc.profile_image_url || "";
+  const image = doc.image || doc.profile_image_url || doc.doctor_url || "";
   const specialty = doc.specialty || "";
   const clinic = doc.clinic || doc.workplace || "";
-  const slots = doc.slots || [];
+  const id = doc.id || "";
+  const rating = typeof doc.rating === "number" ? doc.rating.toFixed(1) : (doc.rating || "");
 
   el.doctorDetail.innerHTML = `
     <div class="doctor-hero">
@@ -147,42 +148,13 @@ function renderDoctorDetail() {
       </div>
     </div>
     <div class="info-grid">
-      <div><p>Phòng khám</p><strong>${clinic}</strong></div>
+      <div><p>Học hàm/Học vị</p><strong>${doc.title || ""}</strong></div>
+      <div><p>Chuyên khoa</p><strong>${specialty}</strong></div>
+      <div class="info-grid-full"><p>Phòng khám</p><strong>${clinic}</strong></div>
+      <div><p>Đánh giá</p><strong>${rating}</strong></div>
+      <div><p>Mã bác sĩ</p><strong>${id}</strong></div>
     </div>
-    <div class="slot-wrap">
-      <p>Khung giờ trống</p>
-      <div id="slot-row" class="slot-row"></div>
-    </div>
-    <button id="doctors-action" type="button">Chọn bác sĩ này</button>
   `;
-
-  const slotRow = document.getElementById("slot-row");
-  slots.forEach((slot) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `slot-btn ${slot === state.selectedSlot ? "active" : ""}`;
-    btn.textContent = slot;
-    btn.addEventListener("click", () => {
-      state.selectedSlot = slot;
-      renderDoctorDetail();
-    });
-    slotRow.appendChild(btn);
-  });
-
-  document.getElementById("doctors-action").addEventListener("click", () => {
-    if (!state.selectedSlot && slots.length > 0) {
-      state.selectedSlot = slots[0];
-    }
-
-    pushMessage("user", `Tôi chọn bác sĩ ${name}, giờ ${state.selectedSlot || "chưa chọn"}`);
-    state.currentStep = "suggest_slot";
-
-    pushMessage(
-      "bot",
-      `Bạn đã chọn bác sĩ **${name}** (${specialty})\nKhung giờ: **${state.selectedSlot || "chưa chọn"}**\nPhòng khám: ${clinic}\n\nBạn có muốn xác nhận lịch hẹn này không?`,
-      "suggest_slot"
-    );
-  });
 }
 
 function pickSlotBySession(session) {
