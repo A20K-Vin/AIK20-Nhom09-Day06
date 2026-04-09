@@ -1,93 +1,14 @@
-const doctors = [
-  {
-    id: "tim-01",
-    name: "ThS.BS Nguyen Minh Chau",
-    specialty: "Noi tim mach",
-    degree: "Thac si Y khoa, CKI Noi tim mach",
-    clinic: "Phong kham Tim mach - Tang 3",
-    rating: 4.9,
-    image:
-      "https://images.unsplash.com/photo-1537368910025-700350fe46c7?auto=format&fit=crop&w=420&q=80",
-    slots: ["08:30", "09:15", "10:00", "14:00"],
-  },
-  {
-    id: "hohap-01",
-    name: "BS Le Hoang Ngan",
-    specialty: "Noi ho hap",
-    degree: "Bac si Noi tru Ho hap",
-    clinic: "Khu kham Tong quat - Phong 12",
-    rating: 4.7,
-    image:
-      "https://images.unsplash.com/photo-1614608682850-e0d6ed316d47?auto=format&fit=crop&w=420&q=80",
-    slots: ["09:00", "10:30", "13:30", "15:00"],
-  },
-  {
-    id: "than-kinh-01",
-    name: "PGS.TS Tran Thi Bich An",
-    specialty: "Than kinh",
-    degree: "Pho giao su, Tien si Than kinh",
-    clinic: "Khoa Than kinh - Phong 21",
-    rating: 4.95,
-    image:
-      "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&w=420&q=80",
-    slots: ["08:45", "11:00", "14:30", "16:15"],
-  },
-  {
-    id: "tongquat-01",
-    name: "BS Pham Quoc Huy",
-    specialty: "Noi tong quat",
-    degree: "Bac si Da khoa",
-    clinic: "Phong kham Tong quat - Tang 1",
-    rating: 4.6,
-    image:
-      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=420&q=80",
-    slots: ["07:45", "09:45", "13:00", "16:00"],
-  },
-];
+const API_BASE = "http://localhost:8000/api";
 
-const specialtyKeywords = [
-  {
-    specialty: "Noi tim mach",
-    keys: ["tim", "nguc", "kho tho", "danh trong nguc"],
-  },
-  {
-    specialty: "Noi ho hap",
-    keys: ["ho", "sot", "viem hong", "kho tho", "dom"],
-  },
-  {
-    specialty: "Than kinh",
-    keys: ["dau dau", "choang", "te", "mat ngu", "chong mat"],
-  },
-];
+// ── State ────────────────────────────────────────────────────────────────────
 
 const state = {
   messages: [],
-  suggestedDoctors: doctors.slice(0, 3),
+  suggestedDoctors: [],
   selectedDoctorIndex: 0,
-  selectedSlot: doctors[0].slots[0],
+  selectedSlot: null,
   appointments: [],
-  chatSessions: [
-    {
-      id: "session-mock-1",
-      symptom: "Met moi, kho ngu 2 ngay",
-      summary: "Da goi y khoa Than kinh va lich 14:30.",
-      time: "Hom qua",
-      messages: [
-        {
-          id: "mock-msg-1",
-          sender: "user",
-          text: "Gan day toi met moi va kho ngu.",
-          withActions: false,
-        },
-        {
-          id: "mock-msg-2",
-          sender: "bot",
-          text: "Ban nen kham khoa Than kinh.\nBac si de xuat: PGS.TS Tran Thi Bich An.\nKhung gio phu hop: 14:30 hom nay.",
-          withActions: true,
-        },
-      ],
-    },
-  ],
+  chatSessions: [],
   activeSessionId: null,
   latestSymptom: "Chua co mo ta trieu chung.",
 };
@@ -108,29 +29,106 @@ const el = {
   consultHistory: document.getElementById("consult-history"),
 };
 
-function detectSpecialty(symptomText) {
-  const normalized = symptomText.toLowerCase();
+// ── API helpers ───────────────────────────────────────────────────────────────
 
-  const found = specialtyKeywords.find((group) =>
-    group.keys.some((key) => normalized.includes(key))
-  );
-
-  return found ? found.specialty : "Noi tong quat";
+async function apiPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+  return res.json();
 }
 
-function getSuggestedDoctorsBySpecialty(specialty) {
-  const exact = doctors.filter((doc) => doc.specialty === specialty);
-  if (exact.length >= 2) {
-    return exact;
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+async function apiPatch(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function currentDoctor() {
+  return state.suggestedDoctors[state.selectedDoctorIndex];
+}
+
+function currentSuggestionText(specialty) {
+  const doc = currentDoctor();
+  return [
+    `Du tren trieu chung, ban nen kham khoa ${specialty}.`,
+    `Bac si de xuat: ${doc.name} (${doc.rating}/5).`,
+    `Khung gio phu hop: ${state.selectedSlot} hom nay tai ${doc.clinic}.`,
+  ].join("\n");
+}
+
+function cloneMessages(messages) {
+  return messages.map((m) => ({ ...m }));
+}
+
+// ── Session sync ──────────────────────────────────────────────────────────────
+
+async function syncActiveSession(overrides = {}) {
+  if (!state.activeSessionId) return;
+
+  const local = state.chatSessions.find((s) => s.id === state.activeSessionId);
+  if (local) {
+    local.messages = cloneMessages(state.messages);
+    if (overrides.symptom) local.symptom = overrides.symptom;
+    if (overrides.summary) local.summary = overrides.summary;
+    if (overrides.time) local.time = overrides.time;
   }
 
-  const mixed = [
-    ...exact,
-    ...doctors.filter((doc) => doc.specialty !== specialty).slice(0, 2),
-  ];
+  try {
+    await apiPatch(`/sessions/${state.activeSessionId}`, {
+      messages: state.messages,
+      ...overrides,
+    });
+  } catch {
+    // non-critical, UI already updated locally
+  }
 
-  return mixed;
+  renderConsultHistory();
 }
+
+async function startNewSession(symptomText) {
+  const session = await apiPost("/sessions", { symptom: symptomText });
+  state.chatSessions.push(session);
+  state.activeSessionId = session.id;
+  renderConsultHistory();
+}
+
+async function loadSessions() {
+  try {
+    const sessions = await apiGet("/sessions?userId=guest");
+    state.chatSessions = sessions;
+    renderConsultHistory();
+  } catch {
+    // backend not yet available — skip
+  }
+}
+
+async function loadAppointments() {
+  try {
+    const appts = await apiGet("/appointments?userId=guest");
+    state.appointments = appts;
+    renderAppointments();
+  } catch {
+    // backend not yet available — skip
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
 
 function pushMessage(sender, text, withActions = false) {
   state.messages.push({
@@ -139,68 +137,8 @@ function pushMessage(sender, text, withActions = false) {
     text,
     withActions,
   });
-
   syncActiveSession();
   renderMessages();
-}
-
-function cloneMessages(messages) {
-  return messages.map((msg) => ({ ...msg }));
-}
-
-function syncActiveSession(overrides = {}) {
-  if (!state.activeSessionId) {
-    return;
-  }
-
-  const target = state.chatSessions.find(
-    (session) => session.id === state.activeSessionId
-  );
-
-  if (!target) {
-    return;
-  }
-
-  target.messages = cloneMessages(state.messages);
-
-  if (overrides.symptom) {
-    target.symptom = overrides.symptom;
-  }
-  if (overrides.summary) {
-    target.summary = overrides.summary;
-  }
-  if (overrides.time) {
-    target.time = overrides.time;
-  }
-
-  renderConsultHistory();
-}
-
-function startNewSession(symptomText) {
-  const newSession = {
-    id: `session-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    symptom: symptomText,
-    summary: "Dang tu van.",
-    time: "Vua xong",
-    messages: [],
-  };
-
-  state.chatSessions.push(newSession);
-  state.activeSessionId = newSession.id;
-  renderConsultHistory();
-}
-
-function currentDoctor() {
-  return state.suggestedDoctors[state.selectedDoctorIndex];
-}
-
-function currentSuggestionText() {
-  const doc = currentDoctor();
-  return [
-    `Du tren trieu chung, ban nen kham khoa ${doc.specialty}.`,
-    `Bac si de xuat: ${doc.name} (${doc.rating}/5).`,
-    `Khung gio phu hop: ${state.selectedSlot} hom nay tai ${doc.clinic}.`,
-  ].join("\n");
 }
 
 function renderMessages() {
@@ -256,7 +194,7 @@ function renderAppointments() {
     .reverse()
     .forEach((item) => {
       const li = document.createElement("li");
-      li.innerHTML = `<strong>${item.timeLabel} - ${item.slot}</strong><span>${item.doctor} | ${item.specialty}</span>`;
+      li.innerHTML = `<strong>${item.date} - ${item.slot}</strong><span>${item.doctor} | ${item.specialty}</span>`;
       el.appointmentList.appendChild(li);
     });
 }
@@ -269,14 +207,12 @@ function renderConsultHistory() {
     .reverse()
     .forEach((item) => {
       const li = document.createElement("li");
-      li.className = `consult-session ${
-        item.id === state.activeSessionId ? "active" : ""
-      }`;
+      li.className = `consult-session ${item.id === state.activeSessionId ? "active" : ""}`;
       li.innerHTML = `<strong>${item.symptom}</strong><span>${item.summary} (${item.time})</span>`;
 
       li.addEventListener("click", () => {
         state.activeSessionId = item.id;
-        state.messages = cloneMessages(item.messages);
+        state.messages = cloneMessages(item.messages || []);
         state.latestSymptom = item.symptom;
         renderLatestSymptom();
         renderMessages();
@@ -299,9 +235,7 @@ function renderDoctorList() {
   state.suggestedDoctors.forEach((doc, index) => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = `doctor-chip ${
-      index === state.selectedDoctorIndex ? "active" : ""
-    }`;
+    chip.className = `doctor-chip ${index === state.selectedDoctorIndex ? "active" : ""}`;
     chip.textContent = doc.name;
 
     chip.addEventListener("click", () => {
@@ -320,6 +254,7 @@ function renderDoctorList() {
 }
 
 function renderDoctorDetail() {
+  if (!currentDoctor()) return;
   const doc = currentDoctor();
 
   el.doctorDetail.innerHTML = `
@@ -352,7 +287,6 @@ function renderDoctorDetail() {
   `;
 
   const slotRow = document.getElementById("slot-row");
-
   doc.slots.forEach((slot) => {
     const slotBtn = document.createElement("button");
     slotBtn.type = "button";
@@ -367,8 +301,7 @@ function renderDoctorDetail() {
     slotRow.appendChild(slotBtn);
   });
 
-  const useDoctorBtn = document.getElementById("doctors-action");
-  useDoctorBtn.addEventListener("click", () => {
+  document.getElementById("doctors-action").addEventListener("click", () => {
     pushMessage(
       "bot",
       `Da cap nhat de xuat theo lua chon cua ban.\nBac si: ${doc.name}\nGio kham: ${state.selectedSlot}`,
@@ -377,15 +310,14 @@ function renderDoctorDetail() {
   });
 }
 
-function chooseAnotherSuggestion() {
-  const nextDoctorIndex =
-    (state.selectedDoctorIndex + 1) % state.suggestedDoctors.length;
+// ── Actions ───────────────────────────────────────────────────────────────────
 
-  state.selectedDoctorIndex = nextDoctorIndex;
+function chooseAnotherSuggestion() {
+  const total = state.suggestedDoctors.length;
+  state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
   const doc = currentDoctor();
-  const slotIndex = doc.slots.indexOf(state.selectedSlot);
-  const nextSlot = doc.slots[(slotIndex + 1 + doc.slots.length) % doc.slots.length];
-  state.selectedSlot = nextSlot;
+  const idx = doc.slots.indexOf(state.selectedSlot);
+  state.selectedSlot = doc.slots[(idx + 1) % doc.slots.length];
 
   renderDoctorList();
   renderDoctorDetail();
@@ -402,9 +334,8 @@ function chooseAnotherSuggestion() {
   });
 }
 
-function confirmAppointment() {
+async function confirmAppointment() {
   const doc = currentDoctor();
-
   const now = new Date();
   const dateLabel = now.toLocaleDateString("vi-VN", {
     day: "2-digit",
@@ -412,14 +343,23 @@ function confirmAppointment() {
     year: "numeric",
   });
 
-  const appointment = {
-    doctor: doc.name,
-    specialty: doc.specialty,
-    slot: state.selectedSlot,
-    timeLabel: dateLabel,
-  };
-
-  state.appointments.push(appointment);
+  try {
+    const appt = await apiPost("/appointments", {
+      doctorId: doc.id,
+      slot: state.selectedSlot,
+      date: dateLabel,
+      userId: "guest",
+    });
+    state.appointments.push(appt);
+  } catch {
+    // fallback: store locally if API fails
+    state.appointments.push({
+      doctor: doc.name,
+      specialty: doc.specialty,
+      slot: state.selectedSlot,
+      date: dateLabel,
+    });
+  }
 
   renderAppointments();
 
@@ -434,16 +374,28 @@ function confirmAppointment() {
   });
 }
 
-function generateBotSuggestionFromInput(inputText) {
-  const specialty = detectSpecialty(inputText);
-  state.suggestedDoctors = getSuggestedDoctorsBySpecialty(specialty);
+async function generateBotSuggestion(inputText) {
+  let specialty = "Noi tong quat";
+  let doctors = [];
+
+  try {
+    const result = await apiPost("/chat/analyze", { symptom: inputText });
+    specialty = result.specialty;
+    doctors = result.doctors;
+  } catch {
+    // API unavailable: show error message
+    pushMessage("bot", "Khong the ket noi den server. Vui long thu lai sau.");
+    return;
+  }
+
+  state.suggestedDoctors = doctors;
   state.selectedDoctorIndex = 0;
-  state.selectedSlot = state.suggestedDoctors[0].slots[0];
+  state.selectedSlot = doctors[0]?.slots[0] ?? null;
 
   renderDoctorList();
   renderDoctorDetail();
+  pushMessage("bot", currentSuggestionText(specialty), true);
 
-  pushMessage("bot", currentSuggestionText(), true);
   syncActiveSession({
     symptom: inputText,
     summary: "Da de xuat khoa va lich kham.",
@@ -451,26 +403,24 @@ function generateBotSuggestionFromInput(inputText) {
   });
 }
 
-function handleSubmit(event) {
+// ── Event handling ────────────────────────────────────────────────────────────
+
+async function handleSubmit(event) {
   event.preventDefault();
   const inputText = el.chatInput.value.trim();
-
-  if (!inputText) {
-    return;
-  }
+  if (!inputText) return;
 
   state.latestSymptom = inputText;
   renderLatestSymptom();
   state.messages = [];
   renderMessages();
-  startNewSession(inputText);
+
+  await startNewSession(inputText);
 
   pushMessage("user", inputText);
   el.chatInput.value = "";
 
-  setTimeout(() => {
-    generateBotSuggestionFromInput(inputText);
-  }, 380);
+  setTimeout(() => generateBotSuggestion(inputText), 380);
 }
 
 function bindEvents() {
@@ -478,6 +428,7 @@ function bindEvents() {
 
   el.prevDoctor.addEventListener("click", () => {
     const total = state.suggestedDoctors.length;
+    if (!total) return;
     state.selectedDoctorIndex = (state.selectedDoctorIndex - 1 + total) % total;
     if (!currentDoctor().slots.includes(state.selectedSlot)) {
       state.selectedSlot = currentDoctor().slots[0];
@@ -488,6 +439,7 @@ function bindEvents() {
 
   el.nextDoctor.addEventListener("click", () => {
     const total = state.suggestedDoctors.length;
+    if (!total) return;
     state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
     if (!currentDoctor().slots.includes(state.selectedSlot)) {
       state.selectedSlot = currentDoctor().slots[0];
@@ -497,7 +449,9 @@ function bindEvents() {
   });
 }
 
-function init() {
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
   pushMessage(
     "bot",
     "Chao ban, minh la tro ly dat lich phong kham.\nBan co the mo ta trieu chung de minh de xuat khoa, bac si va lich kham phu hop."
@@ -505,10 +459,9 @@ function init() {
 
   renderLatestSymptom();
   renderAppointments();
-  renderConsultHistory();
-  renderDoctorList();
-  renderDoctorDetail();
   bindEvents();
+
+  await Promise.all([loadSessions(), loadAppointments()]);
 }
 
 init();
