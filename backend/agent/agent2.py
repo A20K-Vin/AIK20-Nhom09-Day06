@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from openai import OpenAI
 from dotenv import load_dotenv
 from urllib.parse import urljoin
+from difflib import get_close_matches
 
 # ────────────────────────────────────────────────────────────────────────────
 # VINMEC BOOKING AGENT (AGENT 2)
@@ -17,7 +18,8 @@ class VinmecBookingAgent:
     
     def __init__(self, api_base_url: str = "http://localhost:8000/api", 
                  doctors_data_path: Optional[str] = None,
-                 schedule_path: Optional[str] = None):
+                 schedule_path: Optional[str] = None,
+                 valid_specialties: Optional[Set[str]] = None):
         self.api_base_url = api_base_url
         self.session = requests.Session()
         self.booking_context = {}
@@ -30,9 +32,14 @@ class VinmecBookingAgent:
             Path(__file__).parent / "prompt2.txt"
         )
         
-        self.valid_specialties = self._load_specialties(
-            doctors_data_path or Path(__file__).parent.parent / "data" / "doctors_data.json"
-        )
+        # Use provided specialties or load from file
+        if valid_specialties is not None:
+            self.valid_specialties = valid_specialties
+            print(f"✓ Using provided specialties: {len(self.valid_specialties)} items")
+        else:
+            self.valid_specialties = self._load_specialties(
+                doctors_data_path or Path(__file__).parent.parent / "data" / "doctors_data.json"
+            )
         
         self.schedule_data = self._load_json_file(
             schedule_path or Path(__file__).parent.parent.parent / "data" / "schedule.json"
@@ -182,16 +189,59 @@ Nếu sai chính tả, sửa thành tên chính xác. Trả về JSON: {{"found"
     
     # ────────────────────── BOOKING OPERATIONS ────────────────────────
     
+    def _find_matching_specialty(self, specialty: str) -> Optional[tuple]:
+        """Tìm specialty khớp (exact hoặc gần đúng) trong schedule."""
+        if not self.schedule_data.get("hospitals"):
+            return None
+        
+        hospital = self.schedule_data["hospitals"].get("1", {})
+        specialties = hospital.get("specialties", {})
+        
+        # Thử exact match trước
+        for spec_id, spec_data in specialties.items():
+            spec_name = spec_data.get("specialty_name", "")
+            if spec_name == specialty:
+                return (spec_id, spec_data, spec_name)
+        
+        # Thử fuzzy match, nhưng ưu tiên những specialty có doctors và slots
+        spec_names = [spec_data.get("specialty_name", "") for spec_data in specialties.values()]
+        matches = get_close_matches(specialty, spec_names, n=5, cutoff=0.5)
+        
+        # Sắp xếp matches theo độ ưu tiên (có slots > không có slots)
+        for matched_name in matches:
+            for spec_id, spec_data in specialties.items():
+                if spec_data.get("specialty_name") == matched_name:
+                    # Kiểm tra xem specialty này có doctors với slots không
+                    has_slots = False
+                    for doctor_info in spec_data.get("doctors", {}).values():
+                        for date_data in doctor_info.get("dates", {}).values():
+                            if isinstance(date_data, dict) and date_data.get("slots"):
+                                has_slots = True
+                                break
+                        if has_slots:
+                            break
+                    
+                    if has_slots:
+                        return (spec_id, spec_data, matched_name)
+        
+        # Nếu không tìm được specialty nào có slots, trả về first match dù không có slots
+        for matched_name in matches:
+            for spec_id, spec_data in specialties.items():
+                if spec_data.get("specialty_name") == matched_name:
+                    return (spec_id, spec_data, matched_name)
+        
+        return None
+    
     def get_available_slots(self, specialty: str) -> Dict[str, Any]:
         """Lấy danh sách bác sĩ và khung giờ từ schedule.json."""
         if not self.schedule_data.get("hospitals"):
             return {"error": "Schedule not available"}
         
-        # Navigate to specialty
-        hospital = self.schedule_data["hospitals"].get("1", {})
-        for spec_data in hospital.get("specialties", {}).values():
-            if spec_data.get("specialty_name") == specialty:
-                return self._extract_slots_from_specialty(spec_data, specialty)
+        # Tìm specialty với fuzzy matching
+        result = self._find_matching_specialty(specialty)
+        if result:
+            spec_id, spec_data, matched_name = result
+            return self._extract_slots_from_specialty(spec_data, matched_name)
         
         return {"error": f"Specialty '{specialty}' not found"}
     
@@ -203,11 +253,19 @@ Nếu sai chính tả, sửa thành tên chính xác. Trả về JSON: {{"found"
             doctor_name = doctor_info.get("doctor_name", f"Doctor {doctor_id}")
             slots_list = []
             
-            for date_data in doctor_info.get("dates", {}).values():
+            # Parse dates and slots từ structure: dates -> [date_key] -> slots
+            for date_key, date_data in doctor_info.get("dates", {}).items():
                 if isinstance(date_data, dict):
-                    for time_info in date_data.get("times", []):
-                        if isinstance(time_info, dict) and time_info.get("time"):
-                            slots_list.append(time_info["time"])
+                    date_text = date_data.get("date_text", "")
+                    # Lấy slots từ date_data
+                    for slot_info in date_data.get("slots", []):
+                        if isinstance(slot_info, dict) and slot_info.get("time"):
+                            slot_time = slot_info.get("time")
+                            slots_list.append({
+                                "date": date_text,
+                                "time": slot_time,
+                                "slot_id": slot_info.get("id")
+                            })
             
             if slots_list:
                 slots_data[doctor_id] = {"name": doctor_name, "slots": slots_list}
@@ -233,7 +291,7 @@ Nếu sai chính tả, sửa thành tên chính xác. Trả về JSON: {{"found"
         
         context = {
             "specialty": specialty,
-            "available_slots": [f"{s['slot']} ({s['doctor_name']})" for s in all_slots[:6]]
+            "available_slots": [f"{s['doctor_name']}: {s['slot']} ({s['date']})" for s in all_slots[:6]]
         }
         
         msg = f"Cần giúp khách hàng chọn khung giờ khám {specialty}. Đưa ra 2 gợi ý (Sáng/Chiều)."
@@ -245,17 +303,28 @@ Nếu sai chính tả, sửa thành tên chính xác. Trả về JSON: {{"found"
         
         for doctor_id, doctor_info in slots_data["doctors"].items():
             for slot in doctor_info["slots"]:
+                # slot now has structure: {"date": "...", "time": "...", "slot_id": "..."}
+                time_str = slot.get("time", slot) if isinstance(slot, dict) else slot
+                date_str = slot.get("date", "") if isinstance(slot, dict) else ""
+                slot_id = slot.get("slot_id", "") if isinstance(slot, dict) else ""
+                
                 slot_obj = {
                     "doctor_id": doctor_id,
                     "doctor_name": doctor_info["name"],
-                    "slot": slot
+                    "slot": time_str,
+                    "date": date_str,
+                    "slot_id": slot_id
                 }
                 all_slots.append(slot_obj)
                 
-                if int(slot.split(":")[0]) < 12:
-                    morning.append({**slot_obj, "type": "Sáng"})
-                else:
-                    afternoon.append({**slot_obj, "type": "Chiều"})
+                try:
+                    hour = int(time_str.split(":")[0])
+                    if hour < 12:
+                        morning.append({**slot_obj, "type": "Sáng"})
+                    else:
+                        afternoon.append({**slot_obj, "type": "Chiều"})
+                except:
+                    all_slots.append(slot_obj)
         
         return morning, afternoon, all_slots
     
@@ -266,7 +335,22 @@ Nếu sai chính tả, sửa thành tên chính xác. Trả về JSON: {{"found"
         
         if specialty:
             self.booking_context["specialty"] = specialty
+            
+            # Get available slots để pass tới context
+            slots_data = self.get_available_slots(specialty)
             context = {"specialty": specialty}
+            
+            if slots_data.get("doctors") and slots_data.get("count", 0) > 0:
+                # Extract doctor list với slots
+                available_slots = []
+                for doctor_id, doctor_info in slots_data["doctors"].items():
+                    for slot in doctor_info["slots"][:2]:  # Lấy tối đa 2 khung giờ/bác sĩ
+                        time_str = slot.get("time", slot) if isinstance(slot, dict) else slot
+                        date_str = slot.get("date", "") if isinstance(slot, dict) else ""
+                        available_slots.append(f"{doctor_info['name']}: {time_str} ({date_str})")
+                
+                context["available_slots"] = available_slots[:6]
+            
             return self.generate_response(
                 f"Bạn muốn đặt lịch khám {specialty}. Vui lòng chọn bác sĩ và khung giờ.",
                 context

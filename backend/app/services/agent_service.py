@@ -46,9 +46,13 @@ class AgentService:
             from agent.agent1 import VinmecAgent
             from agent.agent2 import VinmecBookingAgent
 
+            # Extract specialties from doctors list to avoid double loading
+            valid_specialties = {d.get("specialty", "") for d in self.doctors if d.get("specialty")}
+            
             self.agent2 = VinmecBookingAgent(
                 api_base_url="http://localhost:8000/api",
                 doctors_data_path=str(Path(__file__).resolve().parents[2] / "data" / "doctors_data.json"),
+                valid_specialties=valid_specialties,
             )
 
             if self.openai_api_key:
