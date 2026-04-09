@@ -214,18 +214,6 @@ class DateIndexIsActive:
             return False
 
 
-class TableTextChanged:
-    """True when #time_table innerText differs from previous_text."""
-    def __init__(self, previous_text: str):
-        self.previous_text = previous_text
-
-    def __call__(self, driver):
-        try:
-            el = driver.find_element(By.CSS_SELECTOR, "#time_table")
-            return (el.text or "").strip() != self.previous_text
-        except Exception:
-            return False
-
 
 class SlotsRendered:
     """
@@ -341,16 +329,8 @@ def click_date_and_confirm(driver, date_el, date_value: str,
                 except Exception:
                     print("          Date active-state not confirmed (could not read classes)")
 
-    # Strategy 2 — table text changed.
-    try:
-        WebDriverWait(driver, TABLE_REFRESH_TIMEOUT, poll_frequency=POLL_FREQ).until(
-            TableTextChanged(previous_table_text)
-        )
-        return True, "table_refreshed"
-    except TimeoutException:
-        pass
 
-    # Strategy 3 — slot elements rendered.
+    # Strategy 2 — slot elements rendered.
     try:
         WebDriverWait(driver, SLOTS_RENDER_TIMEOUT, poll_frequency=POLL_FREQ).until(
             SlotsRendered(previous_table_text)
@@ -359,7 +339,7 @@ def click_date_and_confirm(driver, date_el, date_value: str,
     except TimeoutException:
         pass
 
-    # Strategy 4 — fixed sleep fallback (table may show same "no slots" text
+    # Strategy 3 — fixed sleep fallback (table may show same "no slots" text
     # for consecutive dates; nothing to diff against).
     import time as _time
     _time.sleep(FIXED_WAIT_FALLBACK_S)
@@ -510,21 +490,6 @@ try:
                     if not date_switched:
                         print("          Date switch ultimately failed; skipping date")
                         continue
-
-                    # Wait for table to settle after the confirmed date switch.
-                    previous_table_text = get_current_table_text(driver)
-                    try:
-                        WebDriverWait(driver, TABLE_REFRESH_TIMEOUT, poll_frequency=POLL_FREQ).until(
-                            TableTextChanged(previous_table_text)
-                        )
-                    except TimeoutException:
-                        try:
-                            WebDriverWait(driver, SLOTS_RENDER_TIMEOUT, poll_frequency=POLL_FREQ).until(
-                                SlotsRendered(previous_table_text)
-                            )
-                        except TimeoutException:
-                            # Same "no slots" text for consecutive dates — proceed anyway.
-                            pass
 
                     raw_slots       = get_slots_from_time_table(driver)
                     available_slots = filter_slots_by_vietnam_now(raw_slots, date_text, now_vn)

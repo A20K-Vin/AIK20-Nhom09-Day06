@@ -1,0 +1,314 @@
+{
+  "updated_at_vn": "2026-04-09T12:22:40.900074+07:00",
+  "hospitals": {
+    "1": {
+      "hospital_id": "1",
+      "hospital_name": "BV ĐKQT Vinmec Times City (Hà Nội)",
+      "specialties": {
+        "96": {
+          "specialty_id": "96",
+          "specialty_name": "Bệnh lý tuyến Giáp",
+          "doctors": {
+            "16013": {
+              "doctor_id": "16013",
+              "doctor_name": "Bác sĩ Phạm Vũ Hiệp - Thạc sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": [
+                    {
+                      "id": "0",
+                      "time": "14:50"
+                    }
+                  ]
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            },
+            "18842": {
+              "doctor_id": "18842",
+              "doctor_name": "Bác sĩ Dương Mạnh Cường - Bác sĩ nội trú, Thạc sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": [
+                    {
+                      "id": "0",
+                      "time": "14:40"
+                    },
+                    {
+                      "id": "1",
+                      "time": "15:00"
+                    }
+                  ]
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": [
+                    {
+                      "id": "0",
+                      "time": "14:40"
+                    },
+                    {
+                      "id": "1",
+                      "time": "15:00"
+                    }
+                  ]
+                }
+              }
+            },
+            "15810": {
+              "doctor_id": "15810",
+              "doctor_name": "Bác sĩ Trần Thị Hoàng Anh - Thạc sĩ, Bác sĩ nội trú",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": [
+                    {
+                      "id": "0",
+                      "time": "10:30"
+                    },
+                    {
+                      "id": "1",
+                      "time": "11:00"
+                    }
+                  ]
+                }
+              }
+            },
+            "16537": {
+              "doctor_id": "16537",
+              "doctor_name": "Bác sĩ Phòng khám Service Line Giáp 1",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            },
+            "16660": {
+              "doctor_id": "16660",
+              "doctor_name": "Bác sĩ Phòng khám Service Line Giáp 2",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "30": {
+          "specialty_id": "30",
+          "specialty_name": "Đa khoa",
+          "doctors": {}
+        },
+        "7": {
+          "specialty_id": "7",
+          "specialty_name": "Da liễu",
+          "doctors": {
+            "16229": {
+              "doctor_id": "16229",
+              "doctor_name": "Bác sĩ Nguyễn Mạnh Tường - Bác sĩ chuyên khoa II",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "11": {
+          "specialty_id": "11",
+          "specialty_name": "Dinh dưỡng",
+          "doctors": {}
+        },
+        "46": {
+          "specialty_id": "46",
+          "specialty_name": "Di truyền y học",
+          "doctors": {
+            "16001": {
+              "doctor_id": "16001",
+              "doctor_name": "Bác sĩ Nguyễn Viết Nhân - Phó giáo sư, Tiến sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "2": {
+          "specialty_id": "2",
+          "specialty_name": "Gây mê - điều trị đau",
+          "doctors": {}
+        },
+        "10": {
+          "specialty_id": "10",
+          "specialty_name": "Hen - Dị ứng miễn dịch",
+          "doctors": {
+            "16021": {
+              "doctor_id": "16021",
+              "doctor_name": "Bác sĩ Philippe Rene Bertrand Macaire - Giáo sư, Tiến sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            },
+            "19112": {
+              "doctor_id": "19112",
+              "doctor_name": "Bác sĩ An Thành Công",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            },
+            "19114": {
+              "doctor_id": "19114",
+              "doctor_name": "Bác sĩ Quách Minh Chính",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "131": {
+          "specialty_id": "131",
+          "specialty_name": "Hen - Dị ứng miễn dịch nhi",
+          "doctors": {}
+        },
+        "57": {
+          "specialty_id": "57",
+          "specialty_name": "Hô hấp",
+          "doctors": {
+            "17584": {
+              "doctor_id": "17584",
+              "doctor_name": "Bác sĩ Võ Hà Phương - Thạc sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
