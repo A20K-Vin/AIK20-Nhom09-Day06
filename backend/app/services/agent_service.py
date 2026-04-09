@@ -305,13 +305,35 @@ class AgentService:
         except Exception:
             return None
 
+    def _force_neurology_for_neuro_symptoms(self, message: str) -> str | None:
+        normalized = self._normalize_text(message)
+        if not normalized:
+            return None
+
+        neuro_keywords = {
+            "dau dau",
+            "chong mat",
+            "nhuc dau dau",
+            "choang vang",
+            "te tay chan",
+            "mat thang bang",
+        }
+        if not any(keyword in normalized for keyword in neuro_keywords):
+            return None
+
+        for candidate in ("Nội Thần kinh", "Thần kinh"):
+            if candidate in self.specialties:
+                return candidate
+        return "Thần kinh"
+
     def _build_suggestions(
         self,
         specialty: str | None,
         *,
         offset: int = 0,
         exclude_doctor_names: set[str] | None = None,
-        same_specialty_only: bool = False,
+        exclude_doctor_ids: set[str] | None = None,
+        avoid_recently_shown: bool = False,
     ):
         if not specialty:
             return []
@@ -339,6 +361,7 @@ class AgentService:
             return unique_items
 
         exclude_names = {self._normalize_text(name) for name in (exclude_doctor_names or set()) if name}
+        exclude_ids = {value.strip() for value in (exclude_doctor_ids or set()) if value}
         normalized_target = self._normalize_text(specialty)
         target_tokens = _specialty_tokens(specialty)
         matched = []
@@ -348,6 +371,9 @@ class AgentService:
             normalized_doctor_name = self._normalize_text(
                 doctor.get("name", "") or doctor.get("doctor_name", "")
             )
+            doctor_id = (doctor.get("id") or "").strip()
+            if doctor_id and doctor_id in exclude_ids:
+                continue
             if normalized_doctor_name and normalized_doctor_name in exclude_names:
                 continue
             if not normalized_doctor_specialty:
@@ -360,38 +386,64 @@ class AgentService:
                 matched.append(doctor)
 
         if not matched:
-            matched = [d for d in self.doctors if d.get("specialty") == specialty]
-
-        if same_specialty_only and len(matched) < 3:
-            seen_ids = {item.get("id") for item in matched if item.get("id")}
-            related = []
             for doctor in self.doctors:
-                doctor_id = doctor.get("id")
-                if doctor_id in seen_ids:
-                    continue
+                doctor_specialty = (doctor.get("specialty", "") or "").strip()
+                doctor_tokens = _specialty_tokens(doctor_specialty)
                 normalized_doctor_name = self._normalize_text(
                     doctor.get("name", "") or doctor.get("doctor_name", "")
                 )
+                doctor_id = (doctor.get("id") or "").strip()
+                if doctor_id and doctor_id in exclude_ids:
+                    continue
                 if normalized_doctor_name and normalized_doctor_name in exclude_names:
                     continue
-                doctor_tokens = _specialty_tokens(doctor.get("specialty", "") or "")
                 if target_tokens and target_tokens.intersection(doctor_tokens):
-                    related.append(doctor)
-                    seen_ids.add(doctor_id)
-                if len(matched) + len(related) >= 3:
-                    break
-            matched.extend(related)
+                    matched.append(doctor)
 
         matched = _unique_by_id(matched)
-        if matched and offset > 0:
+        if not matched:
+            return []
+
+        if offset > 0:
             shift = offset % len(matched)
             matched = matched[shift:] + matched[:shift]
 
-        if same_specialty_only:
-            return _unique_by_id(matched)[:3]
+        if not avoid_recently_shown:
+            return matched[:3]
 
-        others = [d for d in self.doctors if d.get("specialty") != specialty]
-        return _unique_by_id(matched + others)[:3]
+        # Ưu tiên bác sĩ mới so với lượt trước; nếu thiếu thì quay vòng trong chính chuyên khoa.
+        suggestions = []
+        seen_batch_ids = set()
+        seen_batch_names = set()
+
+        def _push_unique(item: dict):
+            doctor_id = (item.get("id") or "").strip()
+            doctor_name = self._normalize_text(item.get("name", "") or item.get("doctor_name", ""))
+            if doctor_id and doctor_id in seen_batch_ids:
+                return
+            if doctor_name and doctor_name in seen_batch_names:
+                return
+            if doctor_id:
+                seen_batch_ids.add(doctor_id)
+            if doctor_name:
+                seen_batch_names.add(doctor_name)
+            suggestions.append(item)
+
+        for doctor in matched:
+            doctor_id = (doctor.get("id") or "").strip()
+            doctor_name = self._normalize_text(doctor.get("name", "") or doctor.get("doctor_name", ""))
+            if (doctor_id and doctor_id in exclude_ids) or (doctor_name and doctor_name in exclude_names):
+                continue
+            _push_unique(doctor)
+            if len(suggestions) == 3:
+                return suggestions
+
+        for doctor in matched:
+            _push_unique(doctor)
+            if len(suggestions) == 3:
+                return suggestions
+
+        return suggestions
 
     def _parse_doctor_context(self, doctor_context: str):
         context = {}
@@ -420,6 +472,18 @@ class AgentService:
                 context["shown_doctors_history"] = [
                     s.strip()
                     for s in part.replace("Lịch sử bác sĩ đã hiển thị:", "").split(",")
+                    if s.strip()
+                ]
+            if part.startswith("Danh sách ID bác sĩ đang hiển thị:"):
+                context["shown_doctor_ids"] = [
+                    s.strip()
+                    for s in part.replace("Danh sách ID bác sĩ đang hiển thị:", "").split(",")
+                    if s.strip()
+                ]
+            if part.startswith("Lịch sử ID bác sĩ đã hiển thị:"):
+                context["shown_doctor_ids_history"] = [
+                    s.strip()
+                    for s in part.replace("Lịch sử ID bác sĩ đã hiển thị:", "").split(",")
                     if s.strip()
                 ]
         return context
@@ -532,27 +596,22 @@ class AgentService:
             specialty = context.get("specialty") or self._extract_specialty_from_text(messages)
             current_doctor_name = context.get("doctor_name", "")
             shown_doctors = context.get("shown_doctors", [])
-            shown_doctors_history = context.get("shown_doctors_history", [])
+            shown_doctor_ids = context.get("shown_doctor_ids", [])
             previous_switch_count = self._count_other_doctor_requests(history)
-            excluded_names = set(shown_doctors) | set(shown_doctors_history)
+            excluded_names = set(shown_doctors)
+            excluded_ids = set(shown_doctor_ids)
             if current_doctor_name:
                 excluded_names.add(current_doctor_name)
             suggestions = self._build_suggestions(
                 specialty,
                 offset=previous_switch_count * 3,
                 exclude_doctor_names=excluded_names if excluded_names else None,
-                same_specialty_only=True,
+                exclude_doctor_ids=excluded_ids if excluded_ids else None,
+                avoid_recently_shown=True,
             )
             if not suggestions:
                 return {
                     "message": "Hiện em chưa tìm thấy thêm bác sĩ phù hợp trong chuyên khoa này. Anh/Chị vui lòng thử lại sau ạ.",
-                    "step": "analyze",
-                    "suggestions": [],
-                    "doctor_suggestion": [],
-                }
-            if len(suggestions) < 3:
-                return {
-                    "message": "Hiện em chưa đủ 3 bác sĩ mới chưa từng hiển thị trong chuyên khoa này. Anh/Chị vui lòng thử lại sau ạ.",
                     "step": "analyze",
                     "suggestions": [],
                     "doctor_suggestion": [],
@@ -624,9 +683,12 @@ class AgentService:
         else:
             reply = "Đã ghi nhận triệu chứng của bạn. Dưới đây là gợi ý bác sĩ phù hợp."
 
-        specialty = self._extract_specialty_from_text(reply)
+        forced_specialty = self._force_neurology_for_neuro_symptoms(messages)
+        specialty = forced_specialty or self._extract_specialty_from_text(reply)
         if not specialty:
             specialty = self._infer_specialty_from_symptom(messages, reply)
+        if forced_specialty:
+            specialty = forced_specialty
         if not specialty:
             specialty = "Nội tổng quát"
         suggestions = self._build_suggestions(specialty)

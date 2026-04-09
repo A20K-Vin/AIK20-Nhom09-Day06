@@ -6,6 +6,7 @@ const state = {
   currentStep: "",
   suggestedDoctors: [],
   shownDoctorsBySpecialty: {},
+  shownDoctorIdsBySpecialty: {},
   selectedDoctorIndex: 0,
   selectedSlot: null,
 };
@@ -57,13 +58,20 @@ function recordShownDoctors(doctors) {
 
   const previous = state.shownDoctorsBySpecialty[specialtyKey] || [];
   const nextSet = new Set(previous);
+  const previousIds = state.shownDoctorIdsBySpecialty[specialtyKey] || [];
+  const nextIdSet = new Set(previousIds);
   doctors.forEach((doc) => {
     const name = doc?.name || doc?.doctor_name || "";
+    const id = doc?.id || "";
     if (name) {
       nextSet.add(name);
     }
+    if (id) {
+      nextIdSet.add(id);
+    }
   });
   state.shownDoctorsBySpecialty[specialtyKey] = Array.from(nextSet);
+  state.shownDoctorIdsBySpecialty[specialtyKey] = Array.from(nextIdSet);
 }
 
 function pushMessage(sender, text, step = "") {
@@ -267,11 +275,17 @@ async function callChatAPI(userText) {
     const shownDoctorNames = state.suggestedDoctors
       .map((item) => item.name || item.doctor_name || "")
       .filter(Boolean);
+    const shownDoctorIds = state.suggestedDoctors
+      .map((item) => item.id || "")
+      .filter(Boolean);
     const shownDoctorHistory = specialtyKey
       ? (state.shownDoctorsBySpecialty[specialtyKey] || [])
       : shownDoctorNames;
+    const shownDoctorIdHistory = specialtyKey
+      ? (state.shownDoctorIdsBySpecialty[specialtyKey] || [])
+      : shownDoctorIds;
     const doctorContext = doc
-      ? `Bác sĩ: ${doc.name || doc.doctor_name} | Chuyên khoa: ${doc.specialty || ""} | Phòng khám: ${doc.clinic || doc.workplace || ""} | Khung giờ có sẵn: ${(doc.slots || []).join(", ")} | Danh sách bác sĩ đang hiển thị: ${shownDoctorNames.join(", ")} | Lịch sử bác sĩ đã hiển thị: ${shownDoctorHistory.join(", ")}`
+      ? `Bác sĩ: ${doc.name || doc.doctor_name} | Chuyên khoa: ${doc.specialty || ""} | Phòng khám: ${doc.clinic || doc.workplace || ""} | Khung giờ có sẵn: ${(doc.slots || []).join(", ")} | Danh sách bác sĩ đang hiển thị: ${shownDoctorNames.join(", ")} | Lịch sử bác sĩ đã hiển thị: ${shownDoctorHistory.join(", ")} | Danh sách ID bác sĩ đang hiển thị: ${shownDoctorIds.join(", ")} | Lịch sử ID bác sĩ đã hiển thị: ${shownDoctorIdHistory.join(", ")}`
       : "";
 
     const result = await apiPost("/chat", {
@@ -369,6 +383,7 @@ function resetChat() {
   state.currentStep = "";
   state.suggestedDoctors = [];
   state.shownDoctorsBySpecialty = {};
+  state.shownDoctorIdsBySpecialty = {};
   state.selectedDoctorIndex = 0;
   state.selectedSlot = null;
   renderDoctorList();
