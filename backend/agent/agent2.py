@@ -6,213 +6,118 @@ from typing import Optional, Dict, List, Any, Set
 from datetime import datetime, timedelta
 from openai import OpenAI
 from dotenv import load_dotenv
+from urllib.parse import urljoin
 
 # ────────────────────────────────────────────────────────────────────────────
 # VINMEC BOOKING AGENT (AGENT 2)
 # ────────────────────────────────────────────────────────────────────────────
 
 class VinmecBookingAgent:
-    """
-    Trợ lý ảo chuyên trách điều phối và đặt lịch hẹn tại Hệ thống Y tế Vinmec.
-    
-    Chuyên gia vận hành quy trình đặt lịch, am hiểu sơ đồ tổ chức các chuyên khoa
-    và điều phối thời gian thực.
-    """
+    """Trợ lý ảo đặt lịch khám tại Vinmec - chuyên xử lý booking, routing, và phân tích chuyên khoa."""
     
     def __init__(self, api_base_url: str = "http://localhost:8000/api", 
-                 doctors_data_path: Optional[str] = None):
+                 doctors_data_path: Optional[str] = None,
+                 schedule_path: Optional[str] = None):
         self.api_base_url = api_base_url
         self.session = requests.Session()
         self.booking_context = {}
         
-        # Load environment variables
+        # Initialize OpenAI client
+        self.openai_client = self._init_openai_client()
+        
+        # Load configuration files
+        self.system_prompt = self._load_text_file(
+            Path(__file__).parent / "prompt2.txt"
+        )
+        
+        self.valid_specialties = self._load_specialties(
+            doctors_data_path or Path(__file__).parent.parent / "data" / "doctors_data.json"
+        )
+        
+        self.schedule_data = self._load_json_file(
+            schedule_path or Path(__file__).parent.parent.parent / "data" / "schedule.json"
+        )
+    
+    # ────────────────────── INITIALIZATION ────────────────────────
+    
+    @staticmethod
+    def _init_openai_client() -> Optional[OpenAI]:
+        """Initialize OpenAI client từ env variable."""
         load_dotenv()
         api_key = os.getenv("OPENAI_API_KEY")
-        
         if not api_key:
-            print("⚠️  Warning: OPENAI_API_KEY not found in environment")
-            self.openai_client = None
-        else:
-            self.openai_client = OpenAI(api_key=api_key)
-            print("✓ OpenAI API key loaded")
-        
-        # Load system prompt from prompt2.txt
-        prompt2_path = Path(__file__).parent / "prompt2.txt"
-        self.system_prompt = self._load_system_prompt(prompt2_path)
-        
-        # Load valid specialties from doctors data
-        if doctors_data_path is None:
-            doctors_data_path = Path(__file__).parent.parent / "backend" / "data" / "doctors_data.json"
-        
-        self.valid_specialties = self._load_specialties(doctors_data_path)
+            print("⚠️  Warning: OPENAI_API_KEY not found")
+            return None
+        print("✓ OpenAI API key loaded")
+        return OpenAI(api_key=api_key)
     
-    # ─────────────────────── INITIALIZATION ─────────────────────────────────
+    @staticmethod
+    def _load_json_file(file_path: str | Path) -> Dict:
+        """Load JSON file."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+            print(f"✓ Loaded JSON from {file_path}")
+            return content
+        except FileNotFoundError:
+            print(f"⚠️  JSON file not found: {file_path}")
+            return {}
+        except Exception as e:
+            print(f"⚠️  Error loading JSON: {e}")
+            return {}
+    
+    @staticmethod
+    def _load_text_file(file_path: str | Path) -> str:
+        """Load text file."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            print(f"✓ Loaded text from {file_path}")
+            return content
+        except FileNotFoundError:
+            print(f"⚠️  Text file not found: {file_path}")
+            return "Bạn là trợ lý đặt lịch khám tại Vinmec."
+        except Exception as e:
+            print(f"⚠️  Error loading text: {e}")
+            return "Bạn là trợ lý đặt lịch khám tại Vinmec."
     
     def _load_specialties(self, data_path: str | Path) -> Set[str]:
-        """
-        Tải danh sách chuyên khoa thực tế từ file dữ liệu bác sĩ.
-        
-        Args:
-            data_path: Đường dẫn tới file doctors_data.json
-            
-        Returns:
-            Set các chuyên khoa hợp lệ
-        """
+        """Tải danh sách chuyên khoa từ doctors_data.json."""
         try:
             with open(data_path, 'r', encoding='utf-8') as f:
                 doctors = json.load(f)
             
             specialties = set()
-            for doctor in doctors:
-                specialty = doctor.get("specialty", "").strip()
-                if specialty:
-                    specialties.add(specialty)
+            if isinstance(doctors, list):
+                specialties = {doc.get("specialty", "").strip() for doc in doctors if doc.get("specialty")}
+            elif isinstance(doctors, dict):
+                specialties = {doc.get("specialty", "").strip() for doc in doctors.values() if isinstance(doc, dict) and doc.get("specialty")}
             
-            print(f"✓ Loaded {len(specialties)} specialties from {data_path}")
+            print(f"✓ Loaded {len(specialties)} specialties")
             return specialties
-            
         except FileNotFoundError:
-            print(f"⚠️  Warning: doctors_data.json not found at {data_path}")
-            print(f"   Using fallback specialties")
-            return {
-                "Tim mạch", "Nhi", "Ngoại chấn thương chỉnh hình", 
-                "Gây mê - điều trị đau", "Nội khoa", "Sản phụ khoa"
-            }
+            print(f"⚠️  doctors_data.json not found, using defaults")
+            return {"Tim mạch", "Nhi", "Ngoại chấn thương chỉnh hình", "Gây mê - điều trị đau", "Nội khoa", "Sản phụ khoa"}
         except Exception as e:
             print(f"⚠️  Error loading specialties: {e}")
             return set()
     
-    def _load_system_prompt(self, prompt2_path: str | Path) -> str:
-        """
-        Tải SYSTEM PROMPT từ prompt2.txt.
-        
-        Args:
-            prompt2_path: Đường dẫn tới file prompt2.txt
-            
-        Returns:
-            Nội dung system prompt
-        """
-        try:
-            with open(prompt2_path, 'r', encoding='utf-8') as f:
-                prompt = f.read()
-            print(f"✓ Loaded system prompt from {prompt2_path}")
-            return prompt
-        except FileNotFoundError:
-            print(f"⚠️  Warning: prompt2.txt not found at {prompt2_path}")
-            return "Bạn là trợ lý đặt lịch khám tại Vinmec."
-        except Exception as e:
-            print(f"⚠️  Error loading prompt2.txt: {e}")
-            return "Bạn là trợ lý đặt lịch khám tại Vinmec."
-    
-    # ─────────────────── CONTEXT EXTRACTION & ROUTING ──────────────────────
-    
-    def extract_specialty(self, message: str) -> Optional[str]:
-        """
-        Trích xuất tên chuyên khoa từ message - dùng AI check để handle typo/sai chính tả.
-        
-        Args:
-            message: Tin nhắn từ user
-            
-        Returns:
-            Specialty name hoặc None nếu không tìm thấy
-        """
-        if not self.openai_client:
-            return None
-        
-        # AI infer specialty từ message
-        specialty_list = json.dumps(list(self.valid_specialties), ensure_ascii=False)
-        extract_prompt = f"""Kiểm tra xem user có nhắc tới một trong các chuyên khoa sau không:
-{specialty_list}
-
-QUAN TRỌNG: Nếu user nhắc đến chuyên khoa có thể sai chính tả (VD: "Thần nin" thay vì "Thần kinh"), hãy sửa lại tên chính xác.
-
-Trả về JSON:
-- "found": true/false
-- "specialty": tên chuyên khoa chính xác (nếu found=true), hoặc null"""
-        
-        try:
-            completion = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": extract_prompt},
-                    {"role": "user", "content": message},
-                ],
-                temperature=0.3,
-            )
-            result = json.loads(completion.choices[0].message.content)
-            
-            if result.get("found"):
-                specialty = result.get("specialty")
-                print(f"✓ AI extracted specialty: {specialty}")
-                return specialty
-            else:
-                print(f"ℹ️  No specialty found in message")
-                return None
-                
-        except Exception as e:
-            print(f"⚠️  Error extracting specialty: {e}")
-            return None
-    
-    def route_to_agent1(self, user_message: str) -> Optional[str]:
-        """
-        Route message tới Agent1 để phân tích triệu chứng và lấy specialty.
-        Gọi backend API /api/chat để infer và phân tích.
-        
-        Args:
-            user_message: Tin nhắn từ user
-            
-        Returns:
-            Specialty được infer, hoặc None nếu không thành công
-        """
-        try:
-            response = self.session.post(
-                f"{self.api_base_url.replace('/api', '')}/api/chat",
-                json={"message": user_message},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                specialty = result.get("specialty")
-                # Lưu response từ Agent1 vào context
-                self.booking_context["agent1_response"] = result.get("message")
-                print(f"✓ Agent1 inferred specialty: {specialty}")
-                return specialty
-            else:
-                print(f"⚠️  Agent1 API error: {response.status_code}")
-                return None
-                
-        except Exception as e:
-            print(f"⚠️  Error calling Agent1: {e}")
-            return None
-    
-    # ─────────────────────────── MAIN FLOW ──────────────────────────────────
+    # ────────────────────── AI OPERATIONS ────────────────────────
     
     def generate_response(self, user_message: str, context: Optional[Dict] = None) -> str:
-        """
-        Gọi OpenAI API để generate response tự nhiên dựa trên prompt2 và context.
-        
-        Args:
-            user_message: Tin nhắn từ người dùng
-            context: Context về booking (specialty, slots, etc.)
-            
-        Returns:
-            Response từ OpenAI hoặc fallback message
-        """
+        """Generate natural response từ OpenAI dựa trên prompt2 và context."""
         if not self.openai_client:
-            print("⚠️  OpenAI client not initialized, using fallback response")
             return "Xin lỗi, hiện tại tôi không thể xử lý yêu cầu của bạn."
         
         # Build context message
-        context_msg = ""
+        context_parts = []
         if context:
             if context.get("specialty"):
-                context_msg += f"Chuyên khoa được chọn: {context['specialty']}\n"
+                context_parts.append(f"Chuyên khoa được chọn: {context['specialty']}")
             if context.get("available_slots"):
-                context_msg += f"Khung giờ rảnh: {', '.join(context['available_slots'])}\n"
+                context_parts.append(f"Khung giờ rảnh: {', '.join(context['available_slots'])}")
         
-        user_input = f"{context_msg}\nYêu cầu của người dùng: {user_message}" if context_msg else user_message
+        user_input = "\n".join(context_parts + [user_message]) if context_parts else user_message
         
         try:
             completion = self.openai_client.chat.completions.create(
@@ -224,256 +129,167 @@ Trả về JSON:
                 temperature=0.7,
                 max_tokens=500,
             )
-            
-            response = completion.choices[0].message.content
-            return response
-            
+            return completion.choices[0].message.content
         except Exception as e:
-            print(f"⚠️  OpenAI API error: {e}")
-            return "Xin lỗi, có lỗi khi xử lý yêu cầu của bạn. Vui lòng thử lại."
+            print(f"⚠️  OpenAI error: {e}")
+            return "Xin lỗi, có lỗi khi xử lý yêu cầu của bạn."
     
-    def handle_booking_request(self, user_message: str) -> str:
-        """
-        Smart booking handler - kiểm tra context và route phù hợp.
+    def extract_specialty(self, message: str) -> Optional[str]:
+        """Trích xuất specialty từ message dùng AI (handle typo)."""
+        if not self.openai_client:
+            return None
         
-        Flow:
-        1. Extract specialty từ message (nếu user nói rõ)
-        2. Nếu có specialty → xử lý booking
-        3. Nếu không → route lại Agent1 để phân tích triệu chứng
+        specialty_list = json.dumps(list(self.valid_specialties), ensure_ascii=False)
+        prompt = f"""Kiểm tra xem user có nhắc tới chuyên khoa nào từ danh sách này:
+{specialty_list}
+
+Nếu sai chính tả, sửa thành tên chính xác. Trả về JSON: {{"found": bool, "specialty": str|null}}"""
         
-        Args:
-            user_message: Tin nhắn từ user
-            
-        Returns:
-            Response để gửi lại user
-        """
-        # Bước 1: Cố gắng trích xuất specialty từ message
-        extracted_specialty = self.extract_specialty(user_message)
-        
-        if extracted_specialty:
-            # User nói rõ chuyên khoa → xử lý booking ngay
-            print(f"✓ Specialty found in message: {extracted_specialty}")
-            self.booking_context["specialty"] = extracted_specialty
-            
-            # Generate booking response
-            context = {"specialty": extracted_specialty}
-            response = self.generate_response(
-                f"Bạn muốn đặt lịch khám chuyên khoa {extracted_specialty}. Giúp tôi chọn bác sĩ và khung giờ.",
-                context
+        try:
+            result = self.openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": f"{prompt}\n\nUser message: {message}"}],
+                temperature=0.3,
             )
-            return response
-        
-        # Bước 2: Không có specialty → hỏi Agent1 phân tích triệu chứng
-        print("ℹ️  No specialty in message, routing to Agent1...")
-        inferred_specialty = self.route_to_agent1(user_message)
-        
-        if inferred_specialty:
-            # Agent1 phân tích thành công
-            self.booking_context["specialty"] = inferred_specialty
-            
-            # Generate response dựa vào Agent1
-            agent1_msg = self.booking_context.get("agent1_response", "")
-            context = {"specialty": inferred_specialty}
-            response = self.generate_response(
-                f"Agent1 đã phân tích: {agent1_msg}. Giúp tôi đặt lịch khám chuyên khoa {inferred_specialty}.",
-                context
+            data = json.loads(result.choices[0].message.content)
+            if data.get("found"):
+                print(f"✓ Extracted specialty: {data['specialty']}")
+                return data.get("specialty")
+        except Exception as e:
+            print(f"⚠️  Extraction error: {e}")
+        return None
+    
+    def route_to_agent1(self, user_message: str) -> Optional[str]:
+        """Route message tới Agent1 để phân tích triệu chứng."""
+        try:
+            base_url = self.api_base_url.rstrip('/api').rstrip('/')
+            chat_url = urljoin(base_url + '/', 'api/chat')
+            response = self.session.post(
+                chat_url,
+                json={"message": user_message},
+                timeout=10
             )
-            return response
-        else:
-            # Agent1 fail → hỏi lại user
-            msg = "Dạ, để giúp bạn đặt lịch khám phù hợp, bạn vui lòng mô tả triệu chứng hoặc vấn đề sức khỏe bạn đang gặp phải nhé?"
-            return self.generate_response(msg)
-        """
-        Bắt đầu quy trình đặt lịch. Xác nhận chuyên khoa từ Agent 1.
-        
-        Args:
-            specialty: Chuyên khoa (được chuyển từ Agent 1)
-            user_id: ID người dùng
-            
-        Returns:
-            Tin nhắn xác nhận chuyên khoa (AI-generated)
-        """
-        self.booking_context = {
-            "specialty": specialty,
-            "user_id": user_id,
-            "step": "confirm_specialty"
-        }
-        
-        # Generate response using OpenAI
-        user_msg = f"Tôi muốn đặt lịch khám chuyên khoa {specialty}. Vui lòng xác nhận và giúp tôi chọn khung giờ."
-        return self.generate_response(user_msg, {"specialty": specialty})
+            if response.status_code == 200:
+                result = response.json()
+                self.booking_context["agent1_response"] = result.get("message")
+                specialty = result.get("specialty")
+                print(f"✓ Agent1 inferred: {specialty}")
+                return specialty
+        except Exception as e:
+            print(f"⚠️  Agent1 error: {e}")
+        return None
+    
+    # ────────────────────── BOOKING OPERATIONS ────────────────────────
     
     def get_available_slots(self, specialty: str) -> Dict[str, Any]:
-        """
-        Lấy danh sách bác sĩ và khung giờ rảnh theo chuyên khoa.
+        """Lấy danh sách bác sĩ và khung giờ từ schedule.json."""
+        if not self.schedule_data.get("hospitals"):
+            return {"error": "Schedule not available"}
         
-        Args:
-            specialty: Chuyên khoa
+        # Navigate to specialty
+        hospital = self.schedule_data["hospitals"].get("1", {})
+        for spec_data in hospital.get("specialties", {}).values():
+            if spec_data.get("specialty_name") == specialty:
+                return self._extract_slots_from_specialty(spec_data, specialty)
+        
+        return {"error": f"Specialty '{specialty}' not found"}
+    
+    def _extract_slots_from_specialty(self, spec_data: Dict, specialty: str) -> Dict:
+        """Extract slots từ specialty data."""
+        slots_data = {}
+        
+        for doctor_id, doctor_info in spec_data.get("doctors", {}).items():
+            doctor_name = doctor_info.get("doctor_name", f"Doctor {doctor_id}")
+            slots_list = []
             
-        Returns:
-            Dict chứa danh sách bác sĩ và khung giờ
-        """
-        try:
-            # Lấy danh sách bác sĩ theo chuyên khoa
-            response = self.session.get(
-                f"{self.api_base_url}/doctors",
-                params={"specialty": specialty},
-                timeout=5
-            )
+            for date_data in doctor_info.get("dates", {}).values():
+                if isinstance(date_data, dict):
+                    for time_info in date_data.get("times", []):
+                        if isinstance(time_info, dict) and time_info.get("time"):
+                            slots_list.append(time_info["time"])
             
-            if response.status_code != 200:
-                return {"error": "Không thể lấy danh sách bác sĩ"}
-            
-            doctors = response.json()
-            
-            if not doctors:
-                return {"error": f"Không có bác sĩ chuyên khoa {specialty}"}
-            
-            # Lấy khung giờ cho từng bác sĩ
-            slots_data = {}
-            for doctor in doctors:
-                doctor_id = doctor.get("id")
-                slots_response = self.session.get(
-                    f"{self.api_base_url}/doctors/{doctor_id}/slots",
-                    timeout=5
-                )
-                
-                if slots_response.status_code == 200:
-                    slots_info = slots_response.json()
-                    slots_data[doctor_id] = {
-                        "name": doctor.get("name"),
-                        "title": doctor.get("title", ""),
-                        "clinic": doctor.get("clinic", ""),
-                        "slots": slots_info.get("slots", [])
-                    }
-            
-            return {
-                "specialty": specialty,
-                "doctors": slots_data,
-                "count": len(slots_data)
-            }
-            
-        except requests.exceptions.RequestException as e:
-            return {"error": f"Lỗi kết nối API: {str(e)}"}
+            if slots_list:
+                slots_data[doctor_id] = {"name": doctor_name, "slots": slots_list}
+        
+        return {"specialty": specialty, "doctors": slots_data, "count": len(slots_data)}
     
     def suggest_appointment_options(self, specialty: str) -> str:
-        """
-        Đưa ra danh sách khung giờ rảnh (Sáng/Chiều) cho người dùng chọn lựa.
-        
-        Args:
-            specialty: Chuyên khoa
-            
-        Returns:
-            Tin nhắn với danh sách khung giờ được đề xuất (AI-generated)
-        """
+        """Đưa ra gợi ý khung giờ (Sáng/Chiều) cho user."""
         slots_data = self.get_available_slots(specialty)
         
-        if "error" in slots_data:
-            return f"❌ {slots_data['error']}"
+        if "error" in slots_data or not slots_data.get("doctors") or slots_data.get("count", 0) == 0:
+            err_msg = slots_data.get("error", "No doctors available")
+            return self.generate_response(f"Không có lịch khám: {err_msg}", {"specialty": specialty})
         
-        if slots_data["count"] == 0:
+        # Organize morning/afternoon slots
+        morning_slots, afternoon_slots, all_slots = self._organize_slots(slots_data)
+        
+        self.booking_context.update({
+            "morning_slots": morning_slots,
+            "afternoon_slots": afternoon_slots,
+            "step": "select_slot"
+        })
+        
+        context = {
+            "specialty": specialty,
+            "available_slots": [f"{s['slot']} ({s['doctor_name']})" for s in all_slots[:6]]
+        }
+        
+        msg = f"Cần giúp khách hàng chọn khung giờ khám {specialty}. Đưa ra 2 gợi ý (Sáng/Chiều)."
+        return self.generate_response(msg, context)
+    
+    def _organize_slots(self, slots_data: Dict) -> tuple:
+        """Group slots thành Sáng/Chiều."""
+        morning, afternoon, all_slots = [], [], []
+        
+        for doctor_id, doctor_info in slots_data["doctors"].items():
+            for slot in doctor_info["slots"]:
+                slot_obj = {
+                    "doctor_id": doctor_id,
+                    "doctor_name": doctor_info["name"],
+                    "slot": slot
+                }
+                all_slots.append(slot_obj)
+                
+                if int(slot.split(":")[0]) < 12:
+                    morning.append({**slot_obj, "type": "Sáng"})
+                else:
+                    afternoon.append({**slot_obj, "type": "Chiều"})
+        
+        return morning, afternoon, all_slots
+    
+    def handle_booking_request(self, user_message: str) -> str:
+        """Smart booking handler - extract specialty hoặc route tới Agent1."""
+        # Try extract specialty from message
+        specialty = self.extract_specialty(user_message)
+        
+        if specialty:
+            self.booking_context["specialty"] = specialty
+            context = {"specialty": specialty}
             return self.generate_response(
-                f"Không có lịch khám nào cho chuyên khoa {specialty}. Vui lòng đề xuất cách khách hàng liên hệ tổng đài.",
+                f"Bạn muốn đặt lịch khám {specialty}. Vui lòng chọn bác sĩ và khung giờ.",
+                context
+            )
+        
+        # Route to Agent1
+        specialty = self.route_to_agent1(user_message)
+        if specialty:
+            self.booking_context["specialty"] = specialty
+            agent_msg = self.booking_context.get("agent1_response", "")
+            return self.generate_response(
+                f"Agent1 phân tích: {agent_msg}. Xin vui lòng xác nhận chuyên khoa {specialty}.",
                 {"specialty": specialty}
             )
         
-        # Organize suggestions
-        morning_slots = []
-        afternoon_slots = []
-        slot_list = []
-        
-        for doctor_id, doctor_info in slots_data["doctors"].items():
-            slots = doctor_info["slots"]
-            doctor_name = doctor_info["name"]
-            
-            for slot in slots:
-                hour = int(slot.split(":")[0])
-                slot_obj = {
-                    "doctor_id": doctor_id,
-                    "doctor_name": doctor_name,
-                    "slot": slot
-                }
-                slot_list.append(slot_obj)
-                
-                if hour < 12:
-                    morning_slots.append({**slot_obj, "type": "Sáng"})
-                else:
-                    afternoon_slots.append({**slot_obj, "type": "Chiều"})
-        
-        # Store for later use
-        self.booking_context["morning_slots"] = morning_slots
-        self.booking_context["afternoon_slots"] = afternoon_slots
-        self.booking_context["step"] = "select_slot"
-        
-        # Format available slots for context
-        slots_str = ""
-        if morning_slots:
-            slots_str += "Sáng: " + ", ".join([f"{s['slot']} ({s['doctor_name']})" for s in morning_slots[:3]])
-        if afternoon_slots:
-            if slots_str:
-                slots_str += "; "
-            slots_str += "Chiều: " + ", ".join([f"{s['slot']} ({s['doctor_name']})" for s in afternoon_slots[:3]])
-        
-        # Generate response with AI
-        user_msg = f"Cần giúp khách hàng chọn khung giờ khám chuyên khoa {specialty}. Đưa ra 2 gợi ý (Sáng/Chiều)."
-        context = {
-            "specialty": specialty,
-            "available_slots": [f"{s['slot']} ({s['doctor_name']})" for s in slot_list[:6]]
-        }
-        
-        return self.generate_response(user_msg, context)
-    
-    def create_booking(self, doctor_id: str, slot: str, booking_date: str) -> str:
-        """
-        Tạo lịch hẹn sau khi người dùng xác nhận.
-        
-        Args:
-            doctor_id: ID bác sĩ
-            slot: Khung giờ (VD: "09:00")
-            booking_date: Ngày hẹn (VD: "15/04/2026")
-            
-        Returns:
-            Tin nhắn xác nhận hoặc lỗi
-        """
-        try:
-            appointment_data = {
-                "doctorId": doctor_id,
-                "slot": slot,
-                "date": booking_date,
-                "userId": self.booking_context.get("user_id", "guest")
-            }
-            
-            response = self.session.post(
-                f"{self.api_base_url}/appointments",
-                json=appointment_data,
-                timeout=5
-            )
-            
-            if response.status_code in [200, 201]:
-                appointment = response.json()
-                return self._format_confirmation(appointment)
-            else:
-                error_msg = response.json().get("detail", "Không xác định")
-                return f"❌ Lỗi đặt lịch: {error_msg}"
-                
-        except requests.exceptions.RequestException as e:
-            return f"❌ Lỗi kết nối: {str(e)}"
+        # Fallback
+        return self.generate_response(
+            "Vui lòng mô tả triệu chứng hoặc vấn đề sức khỏe bạn đang gặp phải."
+        )
     
     def final_confirmation(self, doctor_id: str, doctor_name: str, 
                           specialty: str, slot: str, booking_date: str) -> str:
-        """
-        Xác nhận cuối cùng trước khi tạo lịch hẹn.
-        
-        Args:
-            doctor_id: ID bác sĩ
-            doctor_name: Tên bác sĩ
-            specialty: Chuyên khoa
-            slot: Khung giờ
-            booking_date: Ngày hẹn
-            
-        Returns:
-            Tin nhắn xác nhận (AI-generated)
-        """
+        """Xác nhận cuối cùng trước khi đặt lịch."""
         self.booking_context.update({
             "doctor_id": doctor_id,
             "doctor_name": doctor_name,
@@ -482,71 +298,50 @@ Trả về JSON:
             "step": "final_confirm"
         })
         
-        # Generate confirmation message with AI
-        user_msg = f"Xác nhận lịch khám: Chuyên khoa {specialty}, BS {doctor_name}, {slot}, ngày {booking_date}. Yêu cầu xác nhận là chính xác hay cần sửa."
+        msg = f"Xác nhận lịch khám: BS {doctor_name} ({specialty}), {slot}, {booking_date}. Đúng chưa?"
         context = {
             "specialty": specialty,
             "doctor_name": doctor_name,
             "slot": slot,
             "booking_date": booking_date
         }
-        
-        return self.generate_response(user_msg, context)
+        return self.generate_response(msg, context)
     
-    # ────────────────────────── HELPER METHODS ──────────────────────────────
-    
-    def _format_confirmation(self, appointment: Dict) -> str:
-        """Định dạng tin nhắn xác nhận lịch hẹn (AI-generated)."""
-        # Generate success message with AI
-        user_msg = f"Đặt lịch thành công. BS {appointment.get('doctor')} chuyên khoa {appointment.get('specialty')}, {appointment.get('slot')} ngày {appointment.get('date')}. Thành công!"
-        return self.generate_response(user_msg, {"appointment": appointment})
-    
-    def handle_escalation(self, reason: str) -> str:
-        """
-        Xử lý khi cần chuyển sang nhân viên tư vấn hoặc tổng đài viên.
-        
-        Args:
-            reason: Lý do escalate
+    def create_booking(self, doctor_id: str, slot: str, booking_date: str) -> str:
+        """Tạo lịch hẹn qua API."""
+        try:
+            data = {
+                "doctorId": doctor_id,
+                "slot": slot,
+                "date": booking_date,
+                "userId": self.booking_context.get("user_id", "guest")
+            }
+            response = self.session.post(f"{self.api_base_url}/appointments", json=data, timeout=5)
             
-        Returns:
-            Tin nhắn thông báo escalation
-        """
-        escalation_msg = (
-            f"Xin lỗi, tôi không thể xử lý yêu cầu này.\n\n"
-            f"Lý do: {reason}\n\n"
-            f"Tôi sẽ chuyển bạn tới nhân viên tư vấn hoặc tổng đài viên Vinmec.\n"
-            f"Vui lòng chờ một lát... ⏳"
-        )
-        return escalation_msg
+            if response.status_code in [200, 201]:
+                appointment = response.json()
+                msg = f"Đặt lịch thành công! BS {appointment.get('doctor')} ({appointment.get('specialty')}), {appointment.get('slot')} {appointment.get('date')}"
+                return self.generate_response(msg, {"appointment": appointment})
+            else:
+                err = response.json().get("detail", "Unknown error")
+                return f"❌ Lỗi đặt lịch: {err}"
+        except Exception as e:
+            return f"❌ Lỗi: {str(e)}"
+    
+    # ────────────────────── UTILITIES ────────────────────────
     
     def validate_specialty(self, specialty: str) -> bool:
-        """
-        Kiểm tra xem chuyên khoa có trong danh sách hợp lệ không (từ dữ liệu bác sĩ).
-        Hỗ trợ tìm kiếm không phân biệt hoa/thường.
-        
-        Args:
-            specialty: Tên chuyên khoa cần kiểm tra
-            
-        Returns:
-            True nếu chuyên khoa hợp lệ, False nếu không
-        """
+        """Check if specialty valid."""
         if not specialty or not self.valid_specialties:
             return False
-        
-        # Exact match
-        if specialty in self.valid_specialties:
-            return True
-        
-        # Case-insensitive fuzzy match
-        specialty_lower = specialty.lower().strip()
-        for valid_spec in self.valid_specialties:
-            if specialty_lower == valid_spec.lower():
-                return True
-            # Partial match for multi-word specialties
-            if specialty_lower in valid_spec.lower() or valid_spec.lower() in specialty_lower:
-                return True
-        
-        return False
+        spec_lower = specialty.lower().strip()
+        return any(spec_lower == s.lower() or spec_lower in s.lower() for s in self.valid_specialties)
+    
+    def handle_escalation(self, reason: str) -> str:
+        """Xử lý escalation tới nhân viên."""
+        return (f"Xin lỗi, tôi không thể xử lý yêu cầu này.\n"
+                f"Lý do: {reason}\n"
+                f"Sẽ chuyển bạn tới nhân viên tư vấn Vinmec. Vui lòng chờ... ⏳")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -554,46 +349,35 @@ Trả về JSON:
 # ────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Initialize agent
-    # Sẽ tự động load:
-    # - OPENAI_API_KEY từ backend/.env
-    # - SYSTEM_PROMPT từ agent/prompt2.txt
-    # - Valid specialties từ backend/data/doctors_data.json
     agent = VinmecBookingAgent()
     
     if agent.openai_client is None:
-        print("❌ ERROR: OPENAI_API_KEY not found in backend/.env")
-        print("   Ensure backend/.env has OPENAI_API_KEY=sk-...")
+        print("❌ ERROR: OPENAI_API_KEY not found")
         exit(1)
     
-    print(f"Valid specialties loaded: {agent.valid_specialties}\n")
     print("="*60)
-    print("=== VINMEC BOOKING AGENT (WITH AI) ===\n")
+    print("🏥 VINMEC BOOKING AGENT - DEMO")
+    print("="*60 + "\n")
     
-    # Step 1: Start booking
+    # Demo 1: Handle booking request with specialty mentioned
+    user_msg = "Tôi muốn khám tim mạch"
+    print(f"👤 User: {user_msg}")
+    response = agent.handle_booking_request(user_msg)
+    print(f"🤖 Agent: {response}\n")
+    
+    # Demo 2: Get appointment options
     specialty = "Tim mạch"
-    print(f"📋 Step 1: Starting booking for '{specialty}'")
-    print(f"✓ Validating specialty: Valid={agent.validate_specialty(specialty)}\n")
-    
-    greeting = agent.start_booking(specialty)
-    print("🤖 AI Response:")
-    print(greeting)
-    print("\n" + "─"*60 + "\n")
-    
-    # Step 2: Get available slots
-    print(f"📋 Step 2: Fetching available slots for '{specialty}'")
+    print(f"📋 Getting options for {specialty}...")
     suggestions = agent.suggest_appointment_options(specialty)
-    print("🤖 AI Response:")
-    print(suggestions)
-    print("\n" + "─"*60 + "\n")
+    print(f"🤖 {suggestions}\n")
     
-    # Step 3: Final confirmation
-    print(f"📋 Step 3: Final confirmation before booking")
-    doctor_id = "doc-0001"
-    doctor_name = "PGS.TS Đỗ Tất Cường"
-    slot = "09:00"
-    booking_date = "15/04/2026"
-    
-    confirmation = agent.final_confirmation(doctor_id, doctor_name, specialty, slot, booking_date)
-    print("🤖 AI Response:")
-    print(confirmation)
+    # Demo 3: Confirm booking
+    print(f"📋 Final confirmation...")
+    confirmation = agent.final_confirmation(
+        doctor_id="16039", 
+        doctor_name="Trần Trung Dũng",
+        specialty=specialty,
+        slot="09:00",
+        booking_date="15/04/2026"
+    )
+    print(f"🤖 {confirmation}")
