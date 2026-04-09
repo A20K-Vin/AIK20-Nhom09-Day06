@@ -375,15 +375,14 @@ async function confirmAppointment() {
 }
 
 async function generateBotSuggestion(inputText) {
-  let specialty = "Noi tong quat";
+  let botMessage = "";
   let doctors = [];
 
   try {
-    const result = await apiPost("/chat/analyze", { symptom: inputText });
-    specialty = result.specialty;
-    doctors = result.doctors;
+    const result = await apiPost("/chat", { message: inputText });
+    botMessage = result.message;
+    doctors = result.doctor_suggestion;
   } catch {
-    // API unavailable: show error message
     pushMessage("bot", "Khong the ket noi den server. Vui long thu lai sau.");
     return;
   }
@@ -394,7 +393,7 @@ async function generateBotSuggestion(inputText) {
 
   renderDoctorList();
   renderDoctorDetail();
-  pushMessage("bot", currentSuggestionText(specialty), true);
+  pushMessage("bot", botMessage, true);
 
   syncActiveSession({
     symptom: inputText,
