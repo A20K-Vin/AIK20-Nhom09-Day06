@@ -1,5 +1,7 @@
 import os
 import json
+import sys
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -13,28 +15,37 @@ load_dotenv()
 router = APIRouter()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Danh sách specialty hợp lệ (khớp với dữ liệu doctors_data.json)
-VALID_SPECIALTIES = [
-    "Tim mạch", "Hô hấp", "Thần kinh", "Da liễu", "Tiêu hóa",
-    "Cơ xương khớp", "Nội tiết", "Nội tổng quát", "Tai - Mũi - Họng",
-    "Mắt", "Sản phụ khoa", "Nhi", "Tâm thần", "Tiết niệu",
-    "Ung bướu - Xạ trị", "Truyền nhiễm", "Phục hồi chức năng",
-    "Răng - Hàm - Mặt", "Y học cổ truyền",
-]
+# ── Import 2 agent ─────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = f"""Bạn là trợ lý y tế của phòng khám MediFlow.
-Nhiệm vụ của bạn là:
-1. Lắng nghe triệu chứng người dùng mô tả.
-2. Xác định chuyên khoa phù hợp nhất từ danh sách sau: {json.dumps(VALID_SPECIALTIES, ensure_ascii=False)}.
-3. Trả lời thân thiện bằng tiếng Việt, giải thích ngắn gọn tại sao nên khám khoa đó.
+_AGENT_DIR = Path(__file__).parent.parent.parent.parent / "agent"
+if str(_AGENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_AGENT_DIR))
 
-Bạn PHẢI trả về JSON với đúng 2 trường:
-- "specialty": tên chuyên khoa (phải nằm trong danh sách trên, giữ nguyên dấu)
-- "message": câu trả lời thân thiện gửi cho người dùng (1-3 câu)
+from agent1 import VinmecAgent          # phân tích triệu chứng (RAG)
+from agent2 import VinmecBookingAgent   # điều phối đặt lịch
 
-Ví dụ output:
-{{"specialty": "Thần kinh", "message": "Triệu chứng đau đầu và chóng mặt kéo dài của bạn có thể liên quan đến hệ thần kinh. Bạn nên đến khám khoa Thần kinh để được chẩn đoán chính xác."}}"""
+_agent1 = VinmecAgent(
+    data_json_path   = str(_AGENT_DIR / "data" / "medical_knowledge_base.json"),
+    prompt_file_path = str(_AGENT_DIR / "prompt1.txt"),
+    api_key          = os.getenv("OPENAI_API_KEY"),
+)
 
+_agent2 = VinmecBookingAgent(
+    api_base_url      = "http://localhost:8000/api",
+    doctors_data_path = str(_AGENT_DIR.parent / "backend" / "data" / "doctors_data.json"),
+)
+
+# ── Helper: tìm specialty từ text trả về của agent1 ───────────────────────────
+
+def _extract_specialty(text: str) -> str:
+    for length in range(40, 2, -1):
+        for i in range(len(text) - length + 1):
+            candidate = text[i:i + length].strip()
+            if _agent2.validate_specialty(candidate):
+                return candidate
+    return "Nội tổng quát"
+
+# ── Infer intent (giữ nguyên) ─────────────────────────────────────────────────
 
 def _infer_intent(message: str) -> str:
     """
@@ -42,7 +53,7 @@ def _infer_intent(message: str) -> str:
     """
     intent_prompt = """Phân loại ý định sang: "symptom" (mô tả triệu chứng) hoặc "booking" (đặt lịch hẹn)
 Trả về JSON: {"intent": "symptom"} hoặc {"intent": "booking"}"""
-    
+
     try:
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -59,49 +70,64 @@ Trả về JSON: {"intent": "symptom"} hoặc {"intent": "booking"}"""
         return "symptom"
 
 
+# ── Schema ─────────────────────────────────────────────────────────────────────
+
+class MessageHistory(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[MessageHistory] = []
+    doctor_context: str = ""
+    current_step: str = ""
 
 
 class ChatResponse(BaseModel):
     message: str
+    step: str
     doctor_suggestion: list[dict]
 
+
+# ── Endpoint ───────────────────────────────────────────────────────────────────
 
 @router.post("", response_model=ChatResponse)
 def analyze_symptom(body: ChatRequest):
     """
-    Gửi tin nhắn trieụ chứng → AI infer intent → xử lý phù hợp.
+    Gửi tin nhắn → AI infer intent → route sang Agent 1 (triệu chứng) hoặc Agent 2 (đặt lịch).
     """
-    # Infer intent tự động
     intent = _infer_intent(body.message)
-    
-    if intent == "booking":
-        # Người dùng muốn đặt lịch → nhắc nhở sử dụng endpoint booking
-        return ChatResponse(
-            message="Dạ, để đặt lịch hẹn bạn vui lòng sử dụng chức năng đặt lịch hoặc liên hệ trực tiếp với Vinmec",
-            doctor_suggestion=[]
-        )
-    
-    # intent == "symptom" → xử lý như bình thường
-    try:
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": body.message},
-            ],
-            temperature=0.3,
-        )
-        result = json.loads(completion.choices[0].message.content)
-        specialty = result.get("specialty", "Nội tổng quát")
-        reply = result.get("message", "Vui lòng đến khám để được tư vấn thêm.")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"OpenAI error: {str(e)}")
 
-    matched = [d for d in DOCTORS if d["specialty"] == specialty]
-    others  = [d for d in DOCTORS if d["specialty"] != specialty]
+    # ── Intent: booking → Agent 2 xử lý hội thoại đặt lịch ──────────────────
+    if intent == "booking":
+        context = {}
+        if body.doctor_context:
+            for part in body.doctor_context.split("|"):
+                part = part.strip()
+                if part.startswith("Chuyên khoa:"):
+                    context["specialty"] = part.replace("Chuyên khoa:", "").strip()
+                if part.startswith("Khung giờ có sẵn:"):
+                    context["available_slots"] = [
+                        s.strip() for s in part.replace("Khung giờ có sẵn:", "").split(",")
+                    ]
+
+        try:
+            reply = _agent2.generate_response(body.message, context or None)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Agent 2 error: {e}")
+
+        return ChatResponse(message=reply, step="ask_time", doctor_suggestion=[])
+
+    # ── Intent: symptom → Agent 1 phân tích triệu chứng ─────────────────────
+    try:
+        reply = _agent1.handle_request(body.message)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Agent 1 error: {e}")
+
+    specialty = _extract_specialty(reply)
+    matched   = [d for d in DOCTORS if d["specialty"] == specialty]
+    others    = [d for d in DOCTORS if d["specialty"] != specialty]
     doctor_suggestion = (matched + others)[:3]
 
-    return ChatResponse(message=reply, doctor_suggestion=doctor_suggestion)
+    return ChatResponse(message=reply, step="analyze", doctor_suggestion=doctor_suggestion)
