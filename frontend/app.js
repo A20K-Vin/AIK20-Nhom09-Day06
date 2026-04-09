@@ -294,11 +294,55 @@ async function callChatAPI(userText) {
   }
 }
 
+function _parseTimeInput(text) {
+  const m = text.match(/\b(\d{1,2})[h:](\d{0,2})\b/i);
+  if (!m) return null;
+  const hour = parseInt(m[1], 10);
+  if (hour < 0 || hour > 23) return null;
+  return hour * 60 + parseInt(m[2] || "0", 10);
+}
+
+function _pickSlotByMinutes(minutes) {
+  const doc = currentDoctor();
+  if (!doc) return null;
+  let best = null, bestDiff = Infinity;
+  for (const s of (doc.slots || [])) {
+    const [h, mn] = s.split(":").map(Number);
+    const diff = Math.abs(h * 60 + (mn || 0) - minutes);
+    if (diff < bestDiff) { bestDiff = diff; best = s; }
+  }
+  return best;
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
   const inputText = el.chatInput.value.trim();
   if (!inputText) {
     return;
+  }
+
+  // Khi đang bước chọn/xác nhận giờ mà user gõ thời gian cụ thể → xử lý local
+  if (state.currentStep === "ask_time" || state.currentStep === "suggest_slot") {
+    const minutes = _parseTimeInput(inputText);
+    if (minutes !== null) {
+      const slot = _pickSlotByMinutes(minutes);
+      const doc  = currentDoctor();
+      el.chatInput.value = "";
+      pushMessage("user", inputText);
+      if (slot && doc) {
+        state.selectedSlot = slot;
+        renderDoctorDetail();
+        state.currentStep = "suggest_slot";
+        pushMessage(
+          "bot",
+          `Khung giờ **${slot}** còn trống với bác sĩ ${doc.name || doc.doctor_name}.\nBạn có muốn xác nhận lịch này không?`,
+          "suggest_slot"
+        );
+      } else {
+        pushMessage("bot", "Không tìm thấy khung giờ phù hợp. Vui lòng chọn buổi sáng hoặc buổi chiều.", "ask_time");
+      }
+      return;
+    }
   }
 
   pushMessage("user", inputText);

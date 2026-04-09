@@ -1,13 +1,26 @@
+import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
-
 load_dotenv()
+
+_AGENT_DIR = Path(__file__).resolve().parents[2] / "agent"
+
+
+def _load_agent_module(name: str):
+    """Load agent1 hoặc agent2 trực tiếp từ file, không phụ thuộc sys.path."""
+    path = _AGENT_DIR / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, str(path))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 DEFAULT_SLOTS = ["08:00", "09:30", "14:00", "15:30"]
 
@@ -37,31 +50,27 @@ class AgentService:
         self.agent2 = None
         self.doctors = self._load_doctors()
 
-        # Import backend agents from backend/agent folder.
-        self._agent_dir = Path(__file__).resolve().parents[2] / "agent"
-        if str(self._agent_dir) not in sys.path:
-            sys.path.insert(0, str(self._agent_dir))
-
         try:
-            from agent.agent1 import VinmecAgent
-            from agent.agent2 import VinmecBookingAgent
+            agent1_mod = _load_agent_module("agent1")
+            agent2_mod = _load_agent_module("agent2")
+            VinmecAgent = agent1_mod.VinmecAgent
+            VinmecBookingAgent = agent2_mod.VinmecBookingAgent
 
-            # Extract specialties from doctors list to avoid double loading
-            valid_specialties = {d.get("specialty", "") for d in self.doctors if d.get("specialty")}
-            
+            doctors_data_path = str(Path(__file__).resolve().parents[2] / "data" / "doctors_data.json")
+
             self.agent2 = VinmecBookingAgent(
                 api_base_url="http://localhost:8000/api",
-                doctors_data_path=str(Path(__file__).resolve().parents[2] / "data" / "doctors_data.json"),
-                valid_specialties=valid_specialties,
+                doctors_data_path=doctors_data_path,
             )
 
             if self.openai_api_key:
                 self.agent1 = VinmecAgent(
-                    data_json_path=str(self._agent_dir / "data" / "medical_knowledge_base.json"),
-                    prompt_file_path=str(self._agent_dir / "prompt1.txt"),
+                    data_json_path=str(_AGENT_DIR / "data" / "medical_knowledge_base.json"),
+                    prompt_file_path=str(_AGENT_DIR / "prompt1.txt"),
                     api_key=self.openai_api_key,
                 )
-        except Exception:
+        except Exception as e:
+            print(f"⚠️  Agent load failed: {e}")
             self.agent1 = None
             self.agent2 = None
 
@@ -185,14 +194,21 @@ class AgentService:
 
         if intent == "booking" and self.agent2 is not None:
             context = self._parse_doctor_context(doctor_context)
+            enhanced = messages
+            if context.get("doctor_name"):
+                enhanced = f"[Bác sĩ đang được chọn: {context['doctor_name']}] {messages}"
             try:
-                reply = self.agent2.generate_response(messages, context or None)
+                reply = self.agent2.generate_response(enhanced, context or None)
             except Exception:
                 reply = "Xin lỗi, hiện tại tôi chưa thể xử lý đặt lịch. Vui lòng thử lại sau."
 
+            # Nếu user đã nhập giờ cụ thể → chuyển sang suggest_slot
+            has_time = bool(re.search(r"\b\d{1,2}[h:]\d{0,2}\b", messages, re.IGNORECASE))
+            next_step = "suggest_slot" if (has_time and normalized_step == "ask_time") else "ask_time"
+
             return {
                 "message": reply,
-                "step": "ask_time",
+                "step": next_step,
                 "suggestions": [],
                 "doctor_suggestion": [],
             }
