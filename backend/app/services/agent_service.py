@@ -49,6 +49,30 @@ GREETING_KEYWORDS = [
     "hey",
 ]
 
+REQUEST_OTHER_DOCTORS_KEYWORDS = [
+    "còn bác sĩ nào khác không",
+    "con bac si nao khac khong",
+    "đổi bác sĩ",
+    "doi bac si",
+    "bác sĩ khác",
+    "bac si khac",
+]
+
+VAGUE_SYMPTOM_PHRASES = {
+    "dau dau",
+    "dau bung",
+    "dau nguc",
+    "dau hong",
+    "ho",
+    "sot",
+    "met",
+    "chong mat",
+    "mat ngu",
+    "buon non",
+    "non",
+    "tieu chay",
+}
+
 
 class AgentService:
     def __init__(self):
@@ -120,6 +144,9 @@ class AgentService:
         return doctors
 
     def _infer_intent(self, message: str) -> str:
+        if self._is_request_other_doctors(message):
+            return "request_other_doctors"
+
         if self._contains_any(message, GREETING_KEYWORDS):
             return "greeting"
 
@@ -128,8 +155,10 @@ class AgentService:
 
         prompt = (
             'Phân loại ý định sang: "symptom" (mô tả triệu chứng), '
-            '"booking" (đặt lịch hẹn) hoặc "greeting" (chào hỏi/small talk). '
-            'Trả JSON: {"intent":"symptom"} hoặc {"intent":"booking"} hoặc {"intent":"greeting"}'
+            '"booking" (đặt lịch hẹn), "greeting" (chào hỏi/small talk), hoặc '
+            '"request_other_doctors" (muốn đổi/xem bác sĩ khác). '
+            'Trả JSON: {"intent":"symptom"} hoặc {"intent":"booking"} hoặc {"intent":"greeting"} '
+            'hoặc {"intent":"request_other_doctors"}'
         )
         try:
             completion = self.client.chat.completions.create(
@@ -143,7 +172,7 @@ class AgentService:
             )
             result = json.loads(completion.choices[0].message.content)
             intent = result.get("intent", "symptom")
-            if intent in {"symptom", "booking", "greeting"}:
+            if intent in {"symptom", "booking", "greeting", "request_other_doctors"}:
                 return intent
             return "symptom"
         except Exception:
@@ -185,11 +214,9 @@ class AgentService:
         concern = concern_by_specialty.get(specialty, "một số vấn đề sức khỏe liên quan")
 
         return (
-            "Dạ, Vinmec xin chào Anh/Chị. Rất vui được hỗ trợ Anh/Chị trong việc chăm sóc sức khỏe. "
+            "Dạ, Vinmec xin chào Anh/Chị. "
             f"Anh/Chị đang gặp phải triệu chứng {symptom_text}, có thể liên quan đến một số vấn đề như {concern}.\n\n"
-            f"Vinmec kính mời Anh/Chị đến thăm khám cùng các chuyên gia tại Khoa {specialty} để được kiểm tra kỹ lưỡng nhất ạ.\n\n"
-            "Để Anh/Chị không phải chờ đợi lâu khi đến viện, Anh/Chị dự định thăm khám vào ngày nào và khung giờ nào thuận tiện nhất ạ? "
-            "Em sẽ hỗ trợ kiểm tra lịch bác sĩ và đặt hẹn cho Anh/Chị ngay ạ."
+            f"Vinmec kính mời Anh/Chị đến thăm khám cùng các chuyên gia tại Khoa {specialty} để được kiểm tra kỹ lưỡng nhất ạ."
         )
 
     def _canonical_specialty_aliases(self) -> dict[str, str]:
@@ -278,15 +305,51 @@ class AgentService:
         except Exception:
             return None
 
-    def _build_suggestions(self, specialty: str | None):
+    def _build_suggestions(
+        self,
+        specialty: str | None,
+        *,
+        offset: int = 0,
+        exclude_doctor_names: set[str] | None = None,
+        same_specialty_only: bool = False,
+    ):
         if not specialty:
             return []
 
+        def _specialty_tokens(value: str) -> set[str]:
+            stop_words = {"khoa", "noi", "ngoai", "chuyen", "trung", "tam"}
+            return {t for t in self._normalize_text(value).split() if len(t) > 2 and t not in stop_words}
+
+        def _unique_by_id(items: list[dict]) -> list[dict]:
+            unique_items = []
+            seen_ids = set()
+            seen_names = set()
+            for item in items:
+                doctor_id = item.get("id")
+                doctor_name = self._normalize_text(item.get("name", "") or item.get("doctor_name", ""))
+                if doctor_id and doctor_id in seen_ids:
+                    continue
+                if doctor_name and doctor_name in seen_names:
+                    continue
+                if doctor_id:
+                    seen_ids.add(doctor_id)
+                if doctor_name:
+                    seen_names.add(doctor_name)
+                unique_items.append(item)
+            return unique_items
+
+        exclude_names = {self._normalize_text(name) for name in (exclude_doctor_names or set()) if name}
         normalized_target = self._normalize_text(specialty)
+        target_tokens = _specialty_tokens(specialty)
         matched = []
         for doctor in self.doctors:
             doctor_specialty = (doctor.get("specialty", "") or "").strip()
             normalized_doctor_specialty = self._normalize_text(doctor_specialty)
+            normalized_doctor_name = self._normalize_text(
+                doctor.get("name", "") or doctor.get("doctor_name", "")
+            )
+            if normalized_doctor_name and normalized_doctor_name in exclude_names:
+                continue
             if not normalized_doctor_specialty:
                 continue
             if (
@@ -299,8 +362,36 @@ class AgentService:
         if not matched:
             matched = [d for d in self.doctors if d.get("specialty") == specialty]
 
+        if same_specialty_only and len(matched) < 3:
+            seen_ids = {item.get("id") for item in matched if item.get("id")}
+            related = []
+            for doctor in self.doctors:
+                doctor_id = doctor.get("id")
+                if doctor_id in seen_ids:
+                    continue
+                normalized_doctor_name = self._normalize_text(
+                    doctor.get("name", "") or doctor.get("doctor_name", "")
+                )
+                if normalized_doctor_name and normalized_doctor_name in exclude_names:
+                    continue
+                doctor_tokens = _specialty_tokens(doctor.get("specialty", "") or "")
+                if target_tokens and target_tokens.intersection(doctor_tokens):
+                    related.append(doctor)
+                    seen_ids.add(doctor_id)
+                if len(matched) + len(related) >= 3:
+                    break
+            matched.extend(related)
+
+        matched = _unique_by_id(matched)
+        if matched and offset > 0:
+            shift = offset % len(matched)
+            matched = matched[shift:] + matched[:shift]
+
+        if same_specialty_only:
+            return _unique_by_id(matched)[:3]
+
         others = [d for d in self.doctors if d.get("specialty") != specialty]
-        return (matched + others)[:3]
+        return _unique_by_id(matched + others)[:3]
 
     def _parse_doctor_context(self, doctor_context: str):
         context = {}
@@ -318,6 +409,18 @@ class AgentService:
             if part.startswith("Khung giờ có sẵn:"):
                 context["available_slots"] = [
                     s.strip() for s in part.replace("Khung giờ có sẵn:", "").split(",")
+                ]
+            if part.startswith("Danh sách bác sĩ đang hiển thị:"):
+                context["shown_doctors"] = [
+                    s.strip()
+                    for s in part.replace("Danh sách bác sĩ đang hiển thị:", "").split(",")
+                    if s.strip()
+                ]
+            if part.startswith("Lịch sử bác sĩ đã hiển thị:"):
+                context["shown_doctors_history"] = [
+                    s.strip()
+                    for s in part.replace("Lịch sử bác sĩ đã hiển thị:", "").split(",")
+                    if s.strip()
                 ]
         return context
 
@@ -371,6 +474,41 @@ class AgentService:
     def _is_consult_staff_request(self, message: str) -> bool:
         return self._contains_any(message, CONSULT_STAFF_KEYWORDS)
 
+    def _is_request_other_doctors(self, message: str) -> bool:
+        normalized = self._normalize_text(message)
+        return any(keyword in normalized for keyword in REQUEST_OTHER_DOCTORS_KEYWORDS)
+
+    def _count_other_doctor_requests(self, history) -> int:
+        if not isinstance(history, list):
+            return 0
+        count = 0
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            if item.get("role") != "user":
+                continue
+            if self._is_request_other_doctors(item.get("content", "")):
+                count += 1
+        return count
+
+    def _is_vague_symptom(self, message: str) -> bool:
+        normalized = self._normalize_text(message)
+        if not normalized:
+            return True
+
+        tokens = normalized.split()
+        if len(tokens) <= 2:
+            return True
+
+        if normalized in VAGUE_SYMPTOM_PHRASES:
+            return True
+
+        # Keep very short generic "đau ..." inputs as vague (e.g. "đau đầu").
+        if len(tokens) <= 3 and tokens[0] == "dau":
+            return True
+
+        return False
+
     def chat(self, messages: str, doctor_context: str = "", current_step: str = "", history=None):
         if self._is_consult_staff_request(messages):
             return {
@@ -388,6 +526,43 @@ class AgentService:
 
         force_booking = normalized_step == "analyze" and self._is_specialty_confirmation(messages)
         intent = "booking" if force_booking else self._infer_intent(messages)
+
+        if intent == "request_other_doctors":
+            context = self._parse_doctor_context(doctor_context)
+            specialty = context.get("specialty") or self._extract_specialty_from_text(messages)
+            current_doctor_name = context.get("doctor_name", "")
+            shown_doctors = context.get("shown_doctors", [])
+            shown_doctors_history = context.get("shown_doctors_history", [])
+            previous_switch_count = self._count_other_doctor_requests(history)
+            excluded_names = set(shown_doctors) | set(shown_doctors_history)
+            if current_doctor_name:
+                excluded_names.add(current_doctor_name)
+            suggestions = self._build_suggestions(
+                specialty,
+                offset=previous_switch_count * 3,
+                exclude_doctor_names=excluded_names if excluded_names else None,
+                same_specialty_only=True,
+            )
+            if not suggestions:
+                return {
+                    "message": "Hiện em chưa tìm thấy thêm bác sĩ phù hợp trong chuyên khoa này. Anh/Chị vui lòng thử lại sau ạ.",
+                    "step": "analyze",
+                    "suggestions": [],
+                    "doctor_suggestion": [],
+                }
+            if len(suggestions) < 3:
+                return {
+                    "message": "Hiện em chưa đủ 3 bác sĩ mới chưa từng hiển thị trong chuyên khoa này. Anh/Chị vui lòng thử lại sau ạ.",
+                    "step": "analyze",
+                    "suggestions": [],
+                    "doctor_suggestion": [],
+                }
+            return {
+                "message": "Dạ, em đã cập nhật thêm bác sĩ khác cùng chuyên khoa để Anh/Chị tham khảo ạ.",
+                "step": "analyze",
+                "suggestions": suggestions,
+                "doctor_suggestion": suggestions,
+            }
 
         if intent == "booking" and self.agent2 is not None:
             context = self._parse_doctor_context(doctor_context)
@@ -425,6 +600,21 @@ class AgentService:
                 "suggestions": [],
                 "doctor_suggestion": [],
             }
+
+        # Clarify vague symptom exactly once. If user remains vague after this step,
+        # proceed with diagnosis instead of asking repeatedly.
+        if intent == "symptom" and self._is_vague_symptom(messages):
+            if normalized_step != "clarify_symptom":
+                return {
+                    "message": (
+                        "Dạ, em đã ghi nhận triệu chứng của Anh/Chị. "
+                        "Anh/Chị vui lòng mô tả thêm giúp em về thời gian xuất hiện, mức độ đau "
+                        "hoặc dấu hiệu đi kèm để Vinmec định hướng chuyên khoa chính xác hơn ạ."
+                    ),
+                    "step": "clarify_symptom",
+                    "suggestions": [],
+                    "doctor_suggestion": [],
+                }
 
         if self.agent1 is not None:
             try:

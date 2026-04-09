@@ -5,6 +5,7 @@ const state = {
   history: [],
   currentStep: "",
   suggestedDoctors: [],
+  shownDoctorsBySpecialty: {},
   selectedDoctorIndex: 0,
   selectedSlot: null,
 };
@@ -38,6 +39,31 @@ async function apiPost(path, body) {
 
 function currentDoctor() {
   return state.suggestedDoctors[state.selectedDoctorIndex];
+}
+
+function normalizeSpecialtyKey(value) {
+  return (value || "").trim().toLowerCase();
+}
+
+function recordShownDoctors(doctors) {
+  if (!Array.isArray(doctors) || doctors.length === 0) {
+    return;
+  }
+
+  const specialtyKey = normalizeSpecialtyKey(doctors[0]?.specialty || "");
+  if (!specialtyKey) {
+    return;
+  }
+
+  const previous = state.shownDoctorsBySpecialty[specialtyKey] || [];
+  const nextSet = new Set(previous);
+  doctors.forEach((doc) => {
+    const name = doc?.name || doc?.doctor_name || "";
+    if (name) {
+      nextSet.add(name);
+    }
+  });
+  state.shownDoctorsBySpecialty[specialtyKey] = Array.from(nextSet);
 }
 
 function pushMessage(sender, text, step = "") {
@@ -237,8 +263,15 @@ function confirmAppointment() {
 async function callChatAPI(userText) {
   try {
     const doc = currentDoctor();
+    const specialtyKey = normalizeSpecialtyKey(doc?.specialty || "");
+    const shownDoctorNames = state.suggestedDoctors
+      .map((item) => item.name || item.doctor_name || "")
+      .filter(Boolean);
+    const shownDoctorHistory = specialtyKey
+      ? (state.shownDoctorsBySpecialty[specialtyKey] || [])
+      : shownDoctorNames;
     const doctorContext = doc
-      ? `Bác sĩ: ${doc.name || doc.doctor_name} | Chuyên khoa: ${doc.specialty || ""} | Phòng khám: ${doc.clinic || doc.workplace || ""} | Khung giờ có sẵn: ${(doc.slots || []).join(", ")}`
+      ? `Bác sĩ: ${doc.name || doc.doctor_name} | Chuyên khoa: ${doc.specialty || ""} | Phòng khám: ${doc.clinic || doc.workplace || ""} | Khung giờ có sẵn: ${(doc.slots || []).join(", ")} | Danh sách bác sĩ đang hiển thị: ${shownDoctorNames.join(", ")} | Lịch sử bác sĩ đã hiển thị: ${shownDoctorHistory.join(", ")}`
       : "";
 
     const result = await apiPost("/chat", {
@@ -254,6 +287,7 @@ async function callChatAPI(userText) {
 
     if (result.step === "analyze") {
       state.suggestedDoctors = result.doctor_suggestion || result.suggestions || [];
+      recordShownDoctors(state.suggestedDoctors);
       state.selectedDoctorIndex = 0;
       state.selectedSlot = state.suggestedDoctors[0]?.slots?.[0] || null;
       renderDoctorList();
@@ -334,6 +368,7 @@ function resetChat() {
   state.history = [];
   state.currentStep = "";
   state.suggestedDoctors = [];
+  state.shownDoctorsBySpecialty = {};
   state.selectedDoctorIndex = 0;
   state.selectedSlot = null;
   renderDoctorList();
