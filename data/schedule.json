@@ -1,5 +1,5 @@
 {
-  "updated_at_vn": "2026-04-09T12:22:40.900074+07:00",
+  "updated_at_vn": "2026-04-09T12:38:18.704471+07:00",
   "hospitals": {
     "1": {
       "hospital_id": "1",
@@ -31,6 +31,24 @@
                 "2|11/04 Thứ 7": {
                   "date_value": "2",
                   "date_text": "11/04 Thứ 7",
+                  "slots": []
+                },
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": []
+                },
+                "1|10/04 Thu 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thu 6",
+                  "api_date": "2026-04-10",
+                  "slots": []
+                },
+                "2|11/04 Thu 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thu 7",
+                  "api_date": "2026-04-11",
                   "slots": []
                 }
               }
@@ -71,6 +89,38 @@
                       "time": "15:00"
                     }
                   ]
+                },
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": []
+                },
+                "1|10/04 Thu 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thu 6",
+                  "api_date": "2026-04-10",
+                  "slots": [
+                    {
+                      "id": "86655607",
+                      "time": "00:00"
+                    }
+                  ]
+                },
+                "2|11/04 Thu 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thu 7",
+                  "api_date": "2026-04-11",
+                  "slots": [
+                    {
+                      "id": "86618744",
+                      "time": "00:00"
+                    },
+                    {
+                      "id": "86618745",
+                      "time": "20:00"
+                    }
+                  ]
                 }
               }
             },
@@ -101,6 +151,29 @@
                       "time": "11:00"
                     }
                   ]
+                },
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": []
+                },
+                "1|10/04 Thu 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thu 6",
+                  "api_date": "2026-04-10",
+                  "slots": []
+                },
+                "2|11/04 Thu 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thu 7",
+                  "api_date": "2026-04-11",
+                  "slots": [
+                    {
+                      "id": "86647747",
+                      "time": "00:00"
+                    }
+                  ]
                 }
               }
             },
@@ -121,6 +194,24 @@
                 "2|11/04 Thứ 7": {
                   "date_value": "2",
                   "date_text": "11/04 Thứ 7",
+                  "slots": []
+                },
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": []
+                },
+                "1|10/04 Thu 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thu 6",
+                  "api_date": "2026-04-10",
+                  "slots": []
+                },
+                "2|11/04 Thu 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thu 7",
+                  "api_date": "2026-04-11",
                   "slots": []
                 }
               }
@@ -143,6 +234,24 @@
                   "date_value": "2",
                   "date_text": "11/04 Thứ 7",
                   "slots": []
+                },
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": []
+                },
+                "1|10/04 Thu 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thu 6",
+                  "api_date": "2026-04-10",
+                  "slots": []
+                },
+                "2|11/04 Thu 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thu 7",
+                  "api_date": "2026-04-11",
+                  "slots": []
                 }
               }
             }
@@ -151,7 +260,42 @@
         "30": {
           "specialty_id": "30",
           "specialty_name": "Đa khoa",
-          "doctors": {}
+          "doctors": {
+            "16229": {
+              "doctor_id": "16229",
+              "doctor_name": "Nguyễn Mạnh Tường",
+              "dates": {
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": []
+                },
+                "1|10/04 Thu 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thu 6",
+                  "api_date": "2026-04-10",
+                  "slots": [
+                    {
+                      "id": "86659868",
+                      "time": "00:00"
+                    }
+                  ]
+                },
+                "2|11/04 Thu 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thu 7",
+                  "api_date": "2026-04-11",
+                  "slots": [
+                    {
+                      "id": "86659877",
+                      "time": "00:00"
+                    }
+                  ]
+                }
+              }
+            }
+          }
         },
         "7": {
           "specialty_id": "7",
@@ -175,6 +319,23 @@
                   "date_value": "2",
                   "date_text": "11/04 Thứ 7",
                   "slots": []
+                }
+              }
+            },
+            "16983": {
+              "doctor_id": "16983",
+              "doctor_name": "Trịnh Ngọc Phát",
+              "dates": {
+                "0|09/04 Thu 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thu 5",
+                  "api_date": "2026-04-09",
+                  "slots": [
+                    {
+                      "id": "86176255",
+                      "time": "20:00"
+                    }
+                  ]
                 }
               }
             }
@@ -298,6 +459,17 @@
             "17584": {
               "doctor_id": "17584",
               "doctor_name": "Bác sĩ Võ Hà Phương - Thạc sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                }
+              }
+            },
+            "17918": {
+              "doctor_id": "17918",
+              "doctor_name": "Bác sĩ Nguyễn Thị Nét - Thạc sĩ, Bác sĩ nội trú",
               "dates": {
                 "0|09/04 Thứ 5": {
                   "date_value": "0",
