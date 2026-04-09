@@ -1,2 +1,4 @@
 pandas
 datasets
+langchain
+langchain-openai
