@@ -39,6 +39,24 @@ def extract_first_time_token(raw_text):
     return f"{int(h):02d}:{m}"
 
 
+def extract_time_from_start_time(start_time_value):
+    """Parse API start_time (ISO) and return HH:MM."""
+    if not start_time_value:
+        return None
+
+    text = str(start_time_value).strip()
+    if not text:
+        return None
+
+    # Handle both naive ISO and Z-suffixed UTC timestamps.
+    normalized = text.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+        return dt.strftime("%H:%M")
+    except ValueError:
+        return extract_first_time_token(text)
+
+
 def load_existing_schedule(path):
     if not path.exists():
         return {}
@@ -125,18 +143,30 @@ def to_bool(value):
 def parse_slot(slot_item):
     slot_id = pick_first(slot_item, ["id", "slot_id", "time_slot_id", "ab_time_slot_id"])
 
-    time_raw = pick_first(
-        slot_item,
-        ["time", "start_time", "time_from", "from_time", "slot", "label", "name"],
-    )
+    # Priority 1: use start_time from API response (authoritative field).
+    start_time_raw = pick_first(slot_item, ["start_time"])
+    time_text = extract_time_from_start_time(start_time_raw)
 
-    if not time_raw and isinstance(slot_item.get("time_slot"), dict):
+    # Priority 2: fallback for other APIs/legacy formats.
+    if not time_text:
+        time_raw = pick_first(
+            slot_item,
+            ["time", "time_from", "from_time", "slot", "label", "name"],
+        )
+        time_text = extract_first_time_token(str(time_raw))
+
+    if not time_text and isinstance(slot_item.get("time_slot"), dict):
+        nested = slot_item["time_slot"]
+        nested_start_time = pick_first(nested, ["start_time"])
+        time_text = extract_time_from_start_time(nested_start_time)
+
+    if not time_text and isinstance(slot_item.get("time_slot"), dict):
         time_raw = pick_first(
             slot_item["time_slot"],
-            ["time", "start_time", "time_from", "from_time", "slot", "label", "name"],
+            ["time", "time_from", "from_time", "slot", "label", "name"],
         )
+        time_text = extract_first_time_token(str(time_raw))
 
-    time_text = extract_first_time_token(str(time_raw))
     if not time_text:
         return None
 
@@ -144,16 +174,27 @@ def parse_slot(slot_item):
     if status in ("booked", "full", "disabled", "inactive", "closed"):
         return None
 
-    is_available = to_bool(slot_item.get("is_available"))
+    # API has typo field: is_avaiable.
+    is_available = to_bool(
+        pick_first(slot_item, ["is_available", "is_avaiable", "available"], default=None)
+    )
     if is_available is False:
-        return None
-
-    available = to_bool(slot_item.get("available"))
-    if available is False:
         return None
 
     is_booked = to_bool(slot_item.get("is_booked"))
     if is_booked is True:
+        return None
+
+    is_overdue = to_bool(slot_item.get("is_overdue"))
+    if is_overdue is True:
+        return None
+
+    enabled = to_bool(slot_item.get("enabled"))
+    if enabled is False:
+        return None
+
+    canceled = to_bool(slot_item.get("canceled"))
+    if canceled is True:
         return None
 
     disabled = to_bool(slot_item.get("disabled"))

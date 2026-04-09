@@ -1,8 +1,8 @@
 import json
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
+from langchain_classic.chains.retrieval_qa.base import RetrievalQA
 import os
 from dotenv import load_dotenv
 

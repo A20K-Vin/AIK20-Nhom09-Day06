@@ -17,12 +17,12 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ── Import 2 agent ─────────────────────────────────────────────────────────────
 
-_AGENT_DIR = Path(__file__).parent.parent.parent.parent / "agent"
+_AGENT_DIR = Path(__file__).parent.parent.parent / "agent"
 if str(_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(_AGENT_DIR))
 
-from agent1 import VinmecAgent          # phân tích triệu chứng (RAG)
-from agent2 import VinmecBookingAgent   # điều phối đặt lịch
+from agent.agent1 import VinmecAgent          # phân tích triệu chứng (RAG)
+from agent.agent2 import VinmecBookingAgent   # điều phối đặt lịch
 
 _agent1 = VinmecAgent(
     data_json_path   = str(_AGENT_DIR / "data" / "medical_knowledge_base.json"),
