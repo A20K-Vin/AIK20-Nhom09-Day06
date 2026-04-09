@@ -1,4 +1,6 @@
-const doctors = [
+const API_BASE = "http://localhost:8000/api";
+
+const fallbackDoctors = [
   {
     id: "tim-01",
     name: "ThS.BS Nguyen Minh Chau",
@@ -52,19 +54,21 @@ const specialtyKeywords = [
   },
   {
     specialty: "Noi ho hap",
-    keys: ["ho", "sot", "viem hong", "kho tho", "dom"],
+    keys: ["ho", "sot", "viem hong", "dom", "kho tho"],
   },
   {
     specialty: "Than kinh",
-    keys: ["dau dau", "choang", "te", "mat ngu", "chong mat"],
+    keys: ["dau dau", "chong mat", "te", "mat ngu", "choang"],
   },
 ];
 
+// ── State ────────────────────────────────────────────────────────────────────
+
 const state = {
   messages: [],
-  suggestedDoctors: doctors.slice(0, 3),
+  suggestedDoctors: [],
   selectedDoctorIndex: 0,
-  selectedSlot: doctors[0].slots[0],
+  selectedSlot: null,
   appointments: [],
   pendingAppointment: null,
   chatSessions: [
@@ -117,29 +121,125 @@ const el = {
   consultHistory: document.getElementById("consult-history"),
 };
 
-function detectSpecialty(symptomText) {
-  const normalized = symptomText.toLowerCase();
+// ── API helpers ───────────────────────────────────────────────────────────────
 
+async function apiPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+async function apiPatch(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function currentDoctor() {
+  return state.suggestedDoctors[state.selectedDoctorIndex];
+}
+
+function currentSuggestionText(specialty) {
+  const doc = currentDoctor();
+  return [
+    `Du tren trieu chung, ban nen kham khoa ${specialty}.`,
+    `Bac si de xuat: ${doc.name} (${doc.rating}/5).`,
+    `Khung gio phu hop: ${state.selectedSlot} hom nay tai ${doc.clinic}.`,
+  ].join("\n");
+}
+
+function cloneMessages(messages) {
+  return messages.map((m) => ({ ...m }));
+}
+
+function detectSpecialty(symptomText) {
+  const normalized = (symptomText || "").toLowerCase();
   const found = specialtyKeywords.find((group) =>
     group.keys.some((key) => normalized.includes(key))
   );
-
   return found ? found.specialty : "Noi tong quat";
 }
 
 function getSuggestedDoctorsBySpecialty(specialty) {
-  const exact = doctors.filter((doc) => doc.specialty === specialty);
+  const exact = fallbackDoctors.filter((doc) => doc.specialty === specialty);
   if (exact.length >= 2) {
     return exact;
   }
-
-  const mixed = [
+  return [
     ...exact,
-    ...doctors.filter((doc) => doc.specialty !== specialty).slice(0, 2),
+    ...fallbackDoctors.filter((doc) => doc.specialty !== specialty).slice(0, 2),
   ];
-
-  return mixed;
 }
+
+// ── Session sync ──────────────────────────────────────────────────────────────
+
+async function syncActiveSession(overrides = {}) {
+  if (!state.activeSessionId) return;
+
+  const local = state.chatSessions.find((s) => s.id === state.activeSessionId);
+  if (local) {
+    local.messages = cloneMessages(state.messages);
+    if (overrides.symptom) local.symptom = overrides.symptom;
+    if (overrides.summary) local.summary = overrides.summary;
+    if (overrides.time) local.time = overrides.time;
+  }
+
+  try {
+    await apiPatch(`/sessions/${state.activeSessionId}`, {
+      messages: state.messages,
+      ...overrides,
+    });
+  } catch {
+    // non-critical, UI already updated locally
+  }
+
+  renderConsultHistory();
+}
+
+async function startNewSession(symptomText) {
+  const session = await apiPost("/sessions", { symptom: symptomText });
+  state.chatSessions.push(session);
+  state.activeSessionId = session.id;
+  renderConsultHistory();
+}
+
+async function loadSessions() {
+  try {
+    const sessions = await apiGet("/sessions?userId=guest");
+    state.chatSessions = sessions;
+    renderConsultHistory();
+  } catch {
+    // backend not yet available — skip
+  }
+}
+
+async function loadAppointments() {
+  try {
+    const appts = await apiGet("/appointments?userId=guest");
+    state.appointments = appts;
+    renderAppointments();
+  } catch {
+    // backend not yet available — skip
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
 
 function pushMessage(sender, text, withActions = false) {
   const newMessage = {
@@ -370,7 +470,7 @@ function renderAppointments() {
     .reverse()
     .forEach((item) => {
       const li = document.createElement("li");
-      li.innerHTML = `<strong>${item.timeLabel} - ${item.slot}</strong><span>${item.doctor} | ${item.specialty}</span>`;
+      li.innerHTML = `<strong>${item.date} - ${item.slot}</strong><span>${item.doctor} | ${item.specialty}</span>`;
       el.appointmentList.appendChild(li);
     });
 }
@@ -387,14 +487,12 @@ function renderConsultHistory() {
     .reverse()
     .forEach((item) => {
       const li = document.createElement("li");
-      li.className = `consult-session ${
-        item.id === state.activeSessionId ? "active" : ""
-      }`;
+      li.className = `consult-session ${item.id === state.activeSessionId ? "active" : ""}`;
       li.innerHTML = `<strong>${item.symptom}</strong><span>${item.summary} (${item.time})</span>`;
 
       li.addEventListener("click", () => {
         state.activeSessionId = item.id;
-        state.messages = cloneMessages(item.messages);
+        state.messages = cloneMessages(item.messages || []);
         state.latestSymptom = item.symptom;
         renderLatestSymptom();
         renderMessages();
@@ -425,9 +523,7 @@ function renderDoctorList() {
   state.suggestedDoctors.forEach((doc, index) => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = `doctor-chip ${
-      index === state.selectedDoctorIndex ? "active" : ""
-    }`;
+    chip.className = `doctor-chip ${index === state.selectedDoctorIndex ? "active" : ""}`;
     chip.textContent = doc.name;
 
     chip.addEventListener("click", () => {
@@ -518,15 +614,14 @@ function renderDoctorDetail() {
   });
 }
 
-function chooseAnotherSuggestion() {
-  const nextDoctorIndex =
-    (state.selectedDoctorIndex + 1) % state.suggestedDoctors.length;
+// ── Actions ───────────────────────────────────────────────────────────────────
 
-  state.selectedDoctorIndex = nextDoctorIndex;
+function chooseAnotherSuggestion() {
+  const total = state.suggestedDoctors.length;
+  state.selectedDoctorIndex = (state.selectedDoctorIndex + 1) % total;
   const doc = currentDoctor();
-  const slotIndex = doc.slots.indexOf(state.selectedSlot);
-  const nextSlot = doc.slots[(slotIndex + 1 + doc.slots.length) % doc.slots.length];
-  state.selectedSlot = nextSlot;
+  const idx = doc.slots.indexOf(state.selectedSlot);
+  state.selectedSlot = doc.slots[(idx + 1) % doc.slots.length];
 
   renderDoctorList();
   renderDoctorDetail();
@@ -543,9 +638,8 @@ function chooseAnotherSuggestion() {
   });
 }
 
-function confirmAppointment() {
+async function confirmAppointment() {
   const doc = currentDoctor();
-
   const now = new Date();
   const dateLabel = now.toLocaleDateString("vi-VN", {
     day: "2-digit",
@@ -567,7 +661,7 @@ function generateBotSuggestionFromInput(inputText, shouldUpdateSymptom = false) 
   const specialty = detectSpecialty(inputText);
   state.suggestedDoctors = getSuggestedDoctorsBySpecialty(specialty);
   state.selectedDoctorIndex = 0;
-  state.selectedSlot = state.suggestedDoctors[0].slots[0];
+  state.selectedSlot = state.suggestedDoctors[0]?.slots[0] ?? null;
 
   renderDoctorList();
   renderDoctorDetail();
@@ -586,7 +680,9 @@ function generateBotSuggestionFromInput(inputText, shouldUpdateSymptom = false) 
   syncActiveSession(updates);
 }
 
-function handleSubmit(event) {
+// ── Event handling ────────────────────────────────────────────────────────────
+
+async function handleSubmit(event) {
   event.preventDefault();
   const inputText = el.chatInput.value.trim();
 

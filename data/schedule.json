@@ -1,5 +1,5 @@
 {
-  "updated_at_vn": "2026-04-09T12:08:30.934745+07:00",
+  "updated_at_vn": "2026-04-09T12:22:40.900074+07:00",
   "hospitals": {
     "1": {
       "hospital_id": "1",
@@ -157,9 +157,73 @@
           "specialty_id": "7",
           "specialty_name": "Da liễu",
           "doctors": {
-            "16983": {
-              "doctor_id": "16983",
-              "doctor_name": "Bác sĩ Trịnh Ngọc Phát - Thạc sĩ, Bác sĩ nội trú",
+            "16229": {
+              "doctor_id": "16229",
+              "doctor_name": "Bác sĩ Nguyễn Mạnh Tường - Bác sĩ chuyên khoa II",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "11": {
+          "specialty_id": "11",
+          "specialty_name": "Dinh dưỡng",
+          "doctors": {}
+        },
+        "46": {
+          "specialty_id": "46",
+          "specialty_name": "Di truyền y học",
+          "doctors": {
+            "16001": {
+              "doctor_id": "16001",
+              "doctor_name": "Bác sĩ Nguyễn Viết Nhân - Phó giáo sư, Tiến sĩ",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "2": {
+          "specialty_id": "2",
+          "specialty_name": "Gây mê - điều trị đau",
+          "doctors": {}
+        },
+        "10": {
+          "specialty_id": "10",
+          "specialty_name": "Hen - Dị ứng miễn dịch",
+          "doctors": {
+            "16021": {
+              "doctor_id": "16021",
+              "doctor_name": "Bác sĩ Philippe Rene Bertrand Macaire - Giáo sư, Tiến sĩ",
               "dates": {
                 "0|09/04 Thứ 5": {
                   "date_value": "0",
@@ -178,9 +242,62 @@
                 }
               }
             },
-            "18224": {
-              "doctor_id": "18224",
-              "doctor_name": "Bác sĩ Trần Thị Minh Thùy - Thạc sĩ, Bác sĩ nội trú",
+            "19112": {
+              "doctor_id": "19112",
+              "doctor_name": "Bác sĩ An Thành Công",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            },
+            "19114": {
+              "doctor_id": "19114",
+              "doctor_name": "Bác sĩ Quách Minh Chính",
+              "dates": {
+                "0|09/04 Thứ 5": {
+                  "date_value": "0",
+                  "date_text": "09/04 Thứ 5",
+                  "slots": []
+                },
+                "1|10/04 Thứ 6": {
+                  "date_value": "1",
+                  "date_text": "10/04 Thứ 6",
+                  "slots": []
+                },
+                "2|11/04 Thứ 7": {
+                  "date_value": "2",
+                  "date_text": "11/04 Thứ 7",
+                  "slots": []
+                }
+              }
+            }
+          }
+        },
+        "131": {
+          "specialty_id": "131",
+          "specialty_name": "Hen - Dị ứng miễn dịch nhi",
+          "doctors": {}
+        },
+        "57": {
+          "specialty_id": "57",
+          "specialty_name": "Hô hấp",
+          "doctors": {
+            "17584": {
+              "doctor_id": "17584",
+              "doctor_name": "Bác sĩ Võ Hà Phương - Thạc sĩ",
               "dates": {
                 "0|09/04 Thứ 5": {
                   "date_value": "0",
