@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MediFlow Chat - Dat lich phong kham</title>
+    <title>MediFlow Chat - Đặt lịch phòng khám</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,18 +16,39 @@
     <div class="ambient-bg"></div>
 
     <main class="layout">
-      <section class="panel chat-panel" aria-label="Chat dat lich">
+      <section class="panel sidebar" aria-label="Lịch hẹn và lịch sử tư vấn">
+        <header class="panel-header">
+          <p class="kicker">Lịch của bạn</p>
+          <h2>Lịch hẹn đã đặt</h2>
+        </header>
+
+        <div class="card latest-symptom">
+          <p class="card-title">Tóm tắt triệu chứng gần nhất</p>
+          <p id="latest-symptom-text">Chưa có mô tả triệu chứng.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head-row">
+            <p class="card-title">Lịch hẹn sắp tới</p>
+            <span id="appointment-count" class="pill">0 lịch</span>
+          </div>
+          <ul id="appointment-list" class="timeline"></ul>
+        </div>
+
+        <div class="card">
+          <p class="card-title">Lịch sử tư vấn</p>
+          <ul id="consult-history" class="history-list"></ul>
+        </div>
+      </section>
+
+      <section class="panel chat-panel" aria-label="Chat đặt lịch">
         <header class="panel-header chat-header">
           <div>
             <p class="kicker">AI Assistant</p>
             <h1>MediFlow Chat</h1>
           </div>
-          <div class="chat-header-actions">
-            <button id="new-chat-btn" type="button" class="new-chat-btn">
-              Đoạn chat mới
-            </button>
-            <span class="status-dot">Đang hoạt động</span>
-          </div>
+          <span class="status-dot">Đang hoạt động</span>
+          <button id="new-chat-btn" type="button">+ Cuộc trò chuyện mới</button>
         </header>
 
         <div id="chat-feed" class="chat-feed" aria-live="polite"></div>
@@ -36,14 +57,14 @@
           <input
             id="chat-input"
             type="text"
-            placeholder="Nhap trieu chung hoac cau hoi... (Nhan Enter de gui)"
+            placeholder="Nhập triệu chứng hoặc câu hỏi... (Nhấn Enter để gửi)"
             autocomplete="off"
           />
           <button type="submit">Gửi</button>
         </form>
       </section>
 
-      <section class="panel doctor-panel" aria-label="Bang bac si de xuat">
+      <section class="panel doctor-panel" aria-label="Bảng bác sĩ đề xuất">
         <header class="panel-header">
           <p class="kicker">Doctor Board</p>
           <h2>Bác sĩ đề xuất</h2>
@@ -60,45 +81,6 @@
         <article id="doctor-detail" class="doctor-detail"></article>
       </section>
     </main>
-
-    <div id="booking-modal" class="booking-modal" aria-hidden="true">
-      <div class="booking-modal-backdrop" data-close-modal="true"></div>
-      <section class="booking-modal-card" role="dialog" aria-modal="true" aria-labelledby="booking-title">
-        <button id="booking-close" class="booking-close" type="button" aria-label="Dong">x</button>
-        <h3 id="booking-title">Thông tin đặt lịch</h3>
-
-        <form id="booking-form" class="booking-form">
-          <label>
-            <span>Ten</span>
-            <input id="patient-name" type="text" required />
-          </label>
-
-          <label>
-            <span>Gioi tinh</span>
-            <select id="patient-gender" required>
-              <option value="">Chọn giới tính</option>
-              <option value="Nam">Nam</option>
-              <option value="Nu">Nữ</option>
-              <option value="Khac">Khác</option>
-            </select>
-          </label>
-
-          <label>
-            <span>Ngày sinh</span>
-            <input id="patient-dob" type="date" required />
-          </label>
-
-          <label>
-            <span>Số điện thoại</span>
-            <input id="patient-phone" type="tel" required />
-          </label>
-
-          <div class="booking-actions">
-            <button id="booking-confirm" type="submit">Xác nhận</button>
-          </div>
-        </form>
-      </section>
-    </div>
 
     <script src="./app.js"></script>
   </body>
