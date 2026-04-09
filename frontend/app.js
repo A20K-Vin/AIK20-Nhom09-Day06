@@ -252,10 +252,17 @@ async function callChatAPI(userText) {
     state.history.push({ role: "assistant", content: result.message || "" });
     state.currentStep = result.step || "";
 
-    if (result.step === "analyze" && result.doctor_suggestion?.length) {
-      state.suggestedDoctors = result.doctor_suggestion;
+    if (result.step === "analyze") {
+      state.suggestedDoctors = result.doctor_suggestion || result.suggestions || [];
       state.selectedDoctorIndex = 0;
-      state.selectedSlot = result.doctor_suggestion[0]?.slots?.[0] || null;
+      state.selectedSlot = state.suggestedDoctors[0]?.slots?.[0] || null;
+      renderDoctorList();
+      renderDoctorDetail();
+    } else if (result.step === "ask_symptom" || result.step === "greeting") {
+      // Greeting/small-talk must not show stale doctor suggestions.
+      state.suggestedDoctors = [];
+      state.selectedDoctorIndex = 0;
+      state.selectedSlot = null;
       renderDoctorList();
       renderDoctorDetail();
     }
@@ -326,6 +333,11 @@ function resetChat() {
   state.messages = [];
   state.history = [];
   state.currentStep = "";
+  state.suggestedDoctors = [];
+  state.selectedDoctorIndex = 0;
+  state.selectedSlot = null;
+  renderDoctorList();
+  renderDoctorDetail();
   pushMessage(
     "bot",
     "Xin chào! Bạn hãy mô tả triệu chứng để mình tìm chuyên khoa và bác sĩ phù hợp nhé."
