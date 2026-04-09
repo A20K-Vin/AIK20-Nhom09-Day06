@@ -16,7 +16,7 @@ class ChatRequest(BaseModel):
     message: str = ""
     history: list[dict] = Field(default_factory=list)
     doctor_context: str = ""
-    current_step: str = ""
+    current_step: str | None = ""
 
 
 class Suggestion(BaseModel):
@@ -53,6 +53,8 @@ def post_chat(body: ChatRequest):
     result = agent_service.chat(
         messages=user_text,
         doctor_context=body.doctor_context,
+        current_step=body.current_step,
+        history=body.history,
     )
 
     suggestions = result.get("suggestions", [])

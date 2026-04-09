@@ -11,6 +11,22 @@ load_dotenv()
 
 DEFAULT_SLOTS = ["08:00", "09:30", "14:00", "15:30"]
 
+CONFIRM_SPECIALTY_KEYWORDS = [
+    "đồng ý",
+    "xác nhận",
+    "khoa này",
+    "đặt lịch",
+    "book",
+    "hẹn khám",
+]
+
+CONSULT_STAFF_KEYWORDS = [
+    "tư vấn",
+    "nhân viên",
+    "chăm sóc khách hàng",
+    "gọi nhân viên",
+]
+
 
 class AgentService:
     def __init__(self):
@@ -130,14 +146,38 @@ class AgentService:
             part = part.strip()
             if part.startswith("Chuyên khoa:"):
                 context["specialty"] = part.replace("Chuyên khoa:", "").strip()
+            if part.startswith("Bác sĩ:"):
+                context["doctor_name"] = part.replace("Bác sĩ:", "").strip()
+            if part.startswith("Phòng khám:"):
+                context["clinic"] = part.replace("Phòng khám:", "").strip()
             if part.startswith("Khung giờ có sẵn:"):
                 context["available_slots"] = [
                     s.strip() for s in part.replace("Khung giờ có sẵn:", "").split(",")
                 ]
         return context
 
-    def chat(self, messages: str, doctor_context: str = ""):
-        intent = self._infer_intent(messages)
+    def _contains_any(self, text: str, keywords: list[str]) -> bool:
+        lowered = (text or "").strip().lower()
+        return any(keyword in lowered for keyword in keywords)
+
+    def _is_specialty_confirmation(self, message: str) -> bool:
+        return self._contains_any(message, CONFIRM_SPECIALTY_KEYWORDS)
+
+    def _is_consult_staff_request(self, message: str) -> bool:
+        return self._contains_any(message, CONSULT_STAFF_KEYWORDS)
+
+    def chat(self, messages: str, doctor_context: str = "", current_step: str = "", history=None):
+        if self._is_consult_staff_request(messages):
+            return {
+                "message": "Mình đã ghi nhận yêu cầu tư vấn với nhân viên. Vui lòng giữ máy, bộ phận hỗ trợ sẽ liên hệ sớm.",
+                "step": "consult_staff",
+                "suggestions": [],
+                "doctor_suggestion": [],
+            }
+
+        normalized_step = (current_step or "").strip().lower()
+        force_booking = normalized_step == "analyze" and self._is_specialty_confirmation(messages)
+        intent = "booking" if force_booking else self._infer_intent(messages)
 
         if intent == "booking" and self.agent2 is not None:
             context = self._parse_doctor_context(doctor_context)
@@ -148,6 +188,14 @@ class AgentService:
 
             return {
                 "message": reply,
+                "step": "ask_time",
+                "suggestions": [],
+                "doctor_suggestion": [],
+            }
+
+        if intent == "booking" and self.agent2 is None:
+            return {
+                "message": "Bạn đã xác nhận chuyên khoa. Vui lòng chọn buổi khám (sáng hoặc chiều) để mình gợi ý khung giờ phù hợp.",
                 "step": "ask_time",
                 "suggestions": [],
                 "doctor_suggestion": [],
