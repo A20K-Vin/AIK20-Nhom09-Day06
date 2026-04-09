@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MediFlow Chat - Dat lich phong kham</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient-bg"></div>
+
+    <main class="layout">
+      <section class="panel sidebar" aria-label="Lich hen va lich su tu van">
+        <header class="panel-header">
+          <p class="kicker">Lich cua ban</p>
+          <h2>Lich hen da dat</h2>
+        </header>
+
+        <div class="card latest-symptom">
+          <p class="card-title">Tom tat trieu chung gan nhat</p>
+          <p id="latest-symptom-text">Chua co mo ta trieu chung.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head-row">
+            <p class="card-title">Lich hen sap toi</p>
+            <span id="appointment-count" class="pill">0 lich</span>
+          </div>
+          <ul id="appointment-list" class="timeline"></ul>
+        </div>
+
+        <div class="card">
+          <p class="card-title">Lich su tu van</p>
+          <ul id="consult-history" class="history-list"></ul>
+        </div>
+      </section>
+
+      <section class="panel chat-panel" aria-label="Chat dat lich">
+        <header class="panel-header chat-header">
+          <div>
+            <p class="kicker">AI Assistant</p>
+            <h1>MediFlow Chat</h1>
+          </div>
+          <span class="status-dot">Dang hoat dong</span>
+        </header>
+
+        <div id="chat-feed" class="chat-feed" aria-live="polite"></div>
+
+        <form id="chat-form" class="chat-input-wrap">
+          <input
+            id="chat-input"
+            type="text"
+            placeholder="Nhap trieu chung hoac cau hoi... (Nhan Enter de gui)"
+            autocomplete="off"
+          />
+          <button type="submit">Gui</button>
+        </form>
+      </section>
+
+      <section class="panel doctor-panel" aria-label="Bang bac si de xuat">
+        <header class="panel-header">
+          <p class="kicker">Doctor Board</p>
+          <h2>Bac si de xuat</h2>
+        </header>
+
+        <div class="doctor-carousel-controls">
+          <button id="prev-doctor" type="button" aria-label="Bac si truoc">◀</button>
+          <p><span id="doctor-index">1</span>/<span id="doctor-total">1</span></p>
+          <button id="next-doctor" type="button" aria-label="Bac si tiep">▶</button>
+        </div>
+
+        <ul id="doctor-list" class="doctor-list"></ul>
+
+        <article id="doctor-detail" class="doctor-detail"></article>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
